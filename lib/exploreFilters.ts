@@ -1,11 +1,11 @@
-import type { VSData } from "@/lib/contract";
+import type { VData } from "@/lib/contract";
 import { CATEGORIES } from "@/lib/constants";
 import { computeClaimQuality } from "@/lib/claimQuality";
 import { assessUnderdog, compareByUpside, isChallengerUnderdog } from "@/lib/underdog";
 
 export type ExploreSort = "newest" | "highest" | "expiring" | "strength" | "upside";
 
-/** Valores válidos en `?sort=` y chips de orden en Explore / Dashboard. */
+//** Valid values for `?sort=` and sort chips in Explore / Dashboard. */
 export const EXPLORE_SORT_OPTIONS: ExploreSort[] = [
   "newest",
   "highest",
@@ -15,10 +15,10 @@ export const EXPLORE_SORT_OPTIONS: ExploreSort[] = [
   "upside",
 ];
 
-/** Wallet participation filter for the live arena. Applied in ExploreClient (needs address). */
+//** Wallet participation filter for the live arena. Applied in ExploreClient (needs address). */
 export type ParticipationFilter = "all" | "joined" | "available";
 
-/** Explorer view mode: open markets, AI opportunities, or closed markets */
+//** Explorer view mode: open markets, AI opportunities, or closed markets */
 export type ExplorerView = "open" | "ai" | "closed";
 
 export interface ExploreFilterState {
@@ -47,7 +47,7 @@ export const DEFAULT_EXPLORE_FILTERS: ExploreFilterState = {
   view: "open",
 };
 
-/** Valores permitidos para `minStake` (URL `?min=`) y chips del sidebar Explore */
+//** Allowed values for `minStake` (URL `?min=`) and Explore sidebar chips */
 export const MIN_STAKE_OPTIONS = [0, 2, 5, 10, 20] as const;
 
 const VALID_CATEGORY_IDS = new Set<string>(CATEGORIES.map((c) => c.id));
@@ -56,14 +56,14 @@ function isValidCategoryId(id: string): boolean {
   return VALID_CATEGORY_IDS.has(id);
 }
 
-/** Redondea a 2 decimales; 0 si no es finito o es negativo. Tope defensivo para URLs. */
+//** Rounds to 2 decimals; 0 if not finite or negative. Defensive cap for URLs. */
 export function normalizeExploreMinStake(n: number): number {
   if (!Number.isFinite(n) || n < 0) return 0;
   const rounded = Math.round(n * 100) / 100;
   return Math.min(rounded, 1_000_000);
 }
 
-/** Lee y valida query params (?cat=&min=&sort=&q=&view=). Valores inválidos → defaults. */
+//** Reads and validates query params (?cat=&min=&sort=&q=&view=). Invalid values → defaults. */
 export function parseExploreSearchParams(sp: URLSearchParams): ExploreFilterState {
   const catRaw = sp.get("cat") ?? "all";
   const cat =
@@ -104,7 +104,7 @@ export function parseExploreSearchParams(sp: URLSearchParams): ExploreFilterStat
   };
 }
 
-/** Serializa solo desviaciones respecto a defaults (URLs limpias). */
+//** Serializes only deviations from defaults (clean URLs). */
 export function serializeExploreFilters(f: ExploreFilterState): string {
   const p = new URLSearchParams();
   if (f.cat !== "all") p.set("cat", f.cat);
@@ -121,8 +121,8 @@ export function serializeExploreFilters(f: ExploreFilterState): string {
 }
 
 /**
- * Filtra VS por texto en pregunta y posiciones (misma regla que el campo `q` en Explore).
- * Útil para el panel del dashboard y para mantener un solo criterio con el explorador.
+ * Filters VS by text in question and positions (same rule as the `q` field in Explore).
+ * Useful for the dashboard panel and to keep a single criterion with the explorer.
  */
 export function filterVsByTextQuery(open: VSData[], rawQuery: string): VSData[] {
   const q = rawQuery.trim().toLowerCase();
@@ -136,8 +136,8 @@ export function filterVsByTextQuery(open: VSData[], rawQuery: string): VSData[] 
 }
 
 /**
- * Aplica categoría, apuesta mínima, búsqueda (`q`) y orden sobre una lista de `VSData`.
- * Misma lógica para VS on-chain abiertos y para cards de demostración (ids negativos).
+ * Applies category, minimum stake, search (`q`) and sort over a list of `VSData`.
+ * Same logic for open on-chain VS and for demo cards (negative ids).
  */
 export function applyExploreFilters(
   open: VSData[],

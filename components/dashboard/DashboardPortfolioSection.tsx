@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
@@ -38,6 +38,8 @@ import {
   DASHBOARD_SURFACE_DASHED,
   DASHBOARD_SURFACE_MUTED,
 } from "@/lib/dashboardSurface";
+import { StakeHoldingsColumn, type StakeHoldingOpenKey } from "./StakeHoldingsColumn";
+import { RiskAndActionsColumn } from "./RiskAndActionsColumn";
 
 const ease = [0.25, 0.1, 0.25, 1] as const;
 
@@ -1105,7 +1107,7 @@ function StakeHoldingsColumn({
   );
 }
 
-export function RiskAllocationProfileCard({
+function RiskAllocationProfileCard({
   wins,
   losses,
   className = "",

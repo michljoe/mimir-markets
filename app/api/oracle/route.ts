@@ -1,4 +1,4 @@
-/**
+/*
  * Mimir Oracle-as-a-Service — sell the oracle's verdict per call.
  *
  * POST /api/oracle   ($0.005 in USDC / verdict, over x402)
@@ -20,8 +20,9 @@ import {
 import { NextResponse, type NextRequest } from "next/server";
 import { paidRoute } from "@/lib/x402/server";
 import { PRICES } from "@/lib/x402/config";
-import { callLLM, extractJson } from "@/lib/llm";
+import { callLLM } from "@/lib/llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
+import { runOracleService } from "@/lib/oracle/service-prompt";
 
 const MAX_EVIDENCE_CHARS = 8_000;
 
@@ -70,39 +71,17 @@ async function handler(req: NextRequest): Promise<NextResponse> {
     /* fall through with placeholder; LLM will likely return UNRESOLVABLE */
   }
 
-  const prompt = `You are Mimir, an impartial AI oracle. Decide whether Side A or Side B is correct based ONLY on the evidence.
-
-**Question:** ${question}
-**Side A:** ${sideA}
-**Side B:** ${sideB}
-**Settlement rule:** ${body.settlementRule?.trim() || "Use the evidence to determine the outcome."}
-
-<evidence>
-${evidenceText}
-</evidence>
-
-Return JSON only:
-{ "verdict": "SIDE_A" | "SIDE_B" | "DRAW" | "UNRESOLVABLE", "confidence": <0-100>, "explanation": "<one paragraph>" }
-- UNRESOLVABLE if the evidence is missing or ambiguous.
-- Only exceed 80 confidence when the evidence is unambiguous.`;
-
-  let verdict = "UNRESOLVABLE";
-  let confidence = 0;
-  let explanation = "Oracle failed to parse response.";
-  try {
-    const text = await callLLM(prompt, { maxTokens: 1024, jsonOnly: true });
-    const m = extractJson(text);
-    if (m) {
-      const parsed = JSON.parse(m) as { verdict?: string; confidence?: number; explanation?: string };
-      if (["SIDE_A", "SIDE_B", "DRAW", "UNRESOLVABLE"].includes(parsed.verdict ?? "")) {
-        verdict = parsed.verdict!;
-        confidence = Math.max(0, Math.min(100, Math.round(parsed.confidence ?? 50)));
-        explanation = (parsed.explanation ?? "").slice(0, 500);
-      }
-    }
-  } catch {
-    /* keep defaults */
-  }
+  const { verdict, confidence, explanation } = await runOracleService(
+    {
+      question,
+      sideA,
+      sideB,
+      settlementRule: body.settlementRule?.trim(),
+      evidenceUrl,
+      evidenceText,
+    },
+    { complete: (prompt) => callLLM(prompt, { maxTokens: 1024, jsonOnly: true }) },
+  );
 
   // Canonical, versioned commitment over the evidence bytes (length-framed, so an
   // attacker-controlled page cannot forge a boundary). No prompt, wallet or

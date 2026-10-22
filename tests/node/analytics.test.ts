@@ -1,3 +1,4 @@
+import "./helpers/stubs.cjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -9,7 +10,20 @@ import {
   hasRequiredEnvelope,
   isAnalyticsEvent,
 } from "../../lib/analytics/events";
-import { containsRawAddress, redactProperties, redactWalletAddresses } from "../../lib/analytics/redact";
+import {
+  MAX_ARRAY_ITEMS,
+  MAX_BODY_BYTES,
+  MAX_DEPTH,
+  MAX_EVENT_PAYLOAD_BYTES,
+  MAX_PAYLOAD_BYTES,
+  MAX_PROPERTIES,
+  MAX_STRING_LENGTH,
+  containsRawAddress,
+  redactProperties,
+  redactWalletAddresses,
+  trimProperties,
+} from "../../lib/analytics/redact";
+import { POST, ingest } from "../../app/api/analytics/event/route";
 import {
   ANON_ACTOR_ID,
   actorIdForAddress,
@@ -536,3 +550,355 @@ test("every roadmap success metric has an owned, non-financial-analytics source"
     if (/revenue|pnl/i.test(metric.name)) assert.notEqual(metric.source, "posthog");
   }
 });
+
+// ── Property bounds and payload caps (issue #503) ────────────────────────────
+
+test("redaction and payload limit constants are exported and correctly bounded", () => {
+  assert.equal(MAX_EVENT_PAYLOAD_BYTES, 64 * 1024);
+  assert.equal(MAX_PAYLOAD_BYTES, 64 * 1024);
+  assert.equal(MAX_BODY_BYTES, 64 * 1024);
+  assert.equal(MAX_STRING_LENGTH, 200);
+  assert.equal(MAX_DEPTH, 5);
+  assert.equal(MAX_PROPERTIES, 64);
+  assert.equal(MAX_ARRAY_ITEMS, 32);
+});
+
+test("trimProperties trims key count to MAX_PROPERTIES", () => {
+  const input: Record<string, unknown> = {};
+  for (let i = 0; i < 100; i++) {
+    input[`prop_${i}`] = i;
+  }
+  const trimmed = trimProperties(input);
+  assert.equal(Object.keys(trimmed).length, MAX_PROPERTIES);
+  assert.equal(trimmed.prop_0, 0);
+  assert.equal(trimmed.prop_63, 63);
+  assert.equal("prop_64" in trimmed, false);
+});
+
+test("trimProperties trims string lengths to MAX_STRING_LENGTH", () => {
+  const trimmed = trimProperties({
+    short: "hello",
+    overlong: "x".repeat(500),
+  });
+  assert.equal(trimmed.short, "hello");
+  assert.equal((trimmed.overlong as string).length, MAX_STRING_LENGTH);
+  assert.equal(trimmed.overlong, "x".repeat(MAX_STRING_LENGTH));
+});
+
+test("trimProperties trims property keys that exceed MAX_STRING_LENGTH", () => {
+  const overlongKey = "k".repeat(300);
+  const trimmed = trimProperties({ [overlongKey]: "val" });
+  const keys = Object.keys(trimmed);
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].length, MAX_STRING_LENGTH);
+  assert.equal(keys[0], "k".repeat(MAX_STRING_LENGTH));
+});
+
+test("trimProperties bounds deeply nested payloads to MAX_DEPTH", () => {
+  // Build a 10-level deep structure: root is level 0
+  let deep: Record<string, unknown> = { leaf: "val" };
+  for (let i = 0; i < 10; i++) {
+    deep = { [`step_${i}`]: deep };
+  }
+
+  const trimmed = trimProperties(deep);
+
+  // Traverse down and verify nesting depth does not exceed MAX_DEPTH
+  let current: any = trimmed;
+  let depth = 0;
+  while (current && typeof current === "object" && !Array.isArray(current)) {
+    const keys = Object.keys(current);
+    if (keys.length === 0) break;
+    depth++;
+    current = current[keys[0]];
+  }
+  assert.ok(depth <= MAX_DEPTH, `depth was ${depth}, expected <= ${MAX_DEPTH}`);
+});
+
+test("trimProperties bounds arrays to MAX_ARRAY_ITEMS and trims their string members", () => {
+  const arr = Array.from({ length: 50 }, (_, i) => (i === 0 ? "s".repeat(300) : i));
+  const trimmed = trimProperties({ list: arr });
+  const resultList = trimmed.list as unknown[];
+  assert.equal(resultList.length, MAX_ARRAY_ITEMS);
+  assert.equal((resultList[0] as string).length, MAX_STRING_LENGTH);
+});
+
+test("trimProperties handles cyclic structures without infinite recursion", () => {
+  const cyclic: Record<string, unknown> = { key: "value" };
+  cyclic.self = cyclic;
+  const trimmed = trimProperties(cyclic);
+  assert.equal(trimmed.key, "value");
+  assert.deepEqual(trimmed.self, {});
+});
+
+test("trimProperties handles non-object and empty inputs gracefully", () => {
+  assert.deepEqual(trimProperties(null), {});
+  assert.deepEqual(trimProperties(undefined), {});
+  assert.deepEqual(trimProperties("a string"), {});
+  assert.deepEqual(trimProperties(42), {});
+  assert.deepEqual(trimProperties([]), {});
+  assert.deepEqual(trimProperties({}), {});
+});
+
+test("trimProperties preserves normal event properties untouched", () => {
+  const normal = {
+    stake_bucket: "2-10",
+    upside_bps: 1000,
+    is_low_upside: true,
+    total_return_multiple: 2.5,
+  };
+  assert.deepEqual(trimProperties(normal), normal);
+});
+
+test("redactProperties drops keys when properties exceed MAX_PROPERTIES", () => {
+  const input: Record<string, unknown> = {};
+  for (let i = 0; i < 80; i++) {
+    input[`p_${i}`] = i;
+  }
+  const { properties, dropped } = redactProperties(input);
+  assert.equal(Object.keys(properties).length, MAX_PROPERTIES);
+  assert.equal(dropped.length, 80 - MAX_PROPERTIES);
+  assert.ok(dropped.includes("p_64"));
+  assert.ok(dropped.includes("p_79"));
+});
+
+test("redactProperties drops nested levels when depth exceeds MAX_DEPTH", () => {
+  // Build a 9-level nested structure
+  let nested: Record<string, unknown> = { end: "done" };
+  for (let i = 0; i < 8; i++) {
+    nested = { [`level_${i}`]: nested };
+  }
+  const { properties, dropped } = redactProperties(nested);
+  assert.ok(dropped.length > 0);
+  // Verify that the deepest dropped path is recorded
+  assert.ok(dropped.some((path) => path.includes("level_5") || path.includes("level_6")));
+});
+
+// ── HTTP /api/analytics/event ingest caps ─────────────────────────────────────
+
+function createMockRequest(
+  body: string | object,
+  headers: Record<string, string> = {},
+): Request {
+  const bodyText = typeof body === "string" ? body : JSON.stringify(body);
+  return new Request("http://localhost/api/analytics/event", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...headers,
+    },
+    body: bodyText,
+  });
+}
+
+test("ingest drops oversized payloads exceeding MAX_EVENT_PAYLOAD_BYTES without forwarding", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const hugeBody = JSON.stringify({
+    event: "market_viewed",
+    envelope: { source_surface: "home" },
+    properties: { big: "x".repeat(MAX_EVENT_PAYLOAD_BYTES + 100) },
+  });
+
+  const req = createMockRequest(hugeBody);
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false, "oversized payload must be dropped without calling capture()");
+});
+
+test("ingest drops payloads with oversized Content-Length header without reading body", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const req = createMockRequest(
+    { event: "market_viewed", envelope: { source_surface: "home" } },
+    { "content-length": String(MAX_EVENT_PAYLOAD_BYTES + 500) },
+  );
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false, "payload with oversized content-length header must not be forwarded");
+});
+
+test("ingest drops oversized multibyte UTF-8 payloads exceeding byte limit", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  // '🔥' is 4 bytes in UTF-8. 17,000 emojis = 68,000 bytes > 65,536 bytes
+  const emojiStr = "🔥".repeat(17_000);
+  const body = JSON.stringify({
+    event: "market_viewed",
+    envelope: { source_surface: "home" },
+    properties: { test: emojiStr },
+  });
+
+  const req = createMockRequest(body);
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false, "oversized UTF-8 multibyte body must not be forwarded");
+});
+
+test("ingest trims properties to bounds before forwarding to capture", async () => {
+  let capturedArgs: any = null;
+  const mockCapture = async (args: any) => {
+    capturedArgs = args;
+    return { sent: true };
+  };
+
+  // Construct properties with:
+  // - string longer than 200 chars
+  // - more than 64 keys
+  // - nesting deeper than 5 levels
+  const properties: Record<string, unknown> = {
+    long_string: "s".repeat(350),
+  };
+  for (let i = 0; i < 80; i++) {
+    properties[`extra_${i}`] = i;
+  }
+  let deep: Record<string, unknown> = { leaf: "val" };
+  for (let i = 0; i < 8; i++) {
+    deep = { [`nest_${i}`]: deep };
+  }
+  properties.deep = deep;
+
+  const req = createMockRequest({
+    event: "create_submitted",
+    envelope: { source_surface: "vs_create" },
+    properties,
+  });
+
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.ok(capturedArgs !== null, "event must be forwarded");
+  assert.equal(capturedArgs.event, "create_submitted");
+  assert.equal(capturedArgs.envelope.source_surface, "vs_create");
+
+  // Properties must be trimmed:
+  const forwardedProps = capturedArgs.properties;
+  assert.ok(Object.keys(forwardedProps).length <= MAX_PROPERTIES);
+  assert.equal((forwardedProps.long_string as string).length, MAX_STRING_LENGTH);
+});
+
+test("ingest forwards normal events with properties unchanged", async () => {
+  let capturedArgs: any = null;
+  const mockCapture = async (args: any) => {
+    capturedArgs = args;
+    return { sent: true };
+  };
+
+  const normalProps = {
+    stake_bucket: "2-5",
+    is_rematch: false,
+  };
+
+  const req = createMockRequest({
+    event: "create_submitted",
+    envelope: { source_surface: "vs_create" },
+    properties: normalProps,
+    address: ADDRESS,
+    idempotencyKey: "test-idempotency-key",
+  });
+
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.ok(capturedArgs !== null, "normal event must be forwarded");
+  assert.equal(capturedArgs.event, "create_submitted");
+  assert.equal(capturedArgs.envelope.source_surface, "vs_create");
+  assert.equal(capturedArgs.envelope.actor_type, "human");
+  assert.deepEqual(capturedArgs.properties, normalProps);
+  assert.equal(capturedArgs.address, ADDRESS);
+  assert.equal(capturedArgs.idempotencyKey, "test-idempotency-key");
+});
+
+test("ingest drops malformed JSON payloads silently", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const req = createMockRequest("{ this is not valid json");
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false);
+});
+
+test("ingest drops payloads with unknown event names without forwarding", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const req = createMockRequest({
+    event: "invalid_unregistered_event_name",
+    envelope: { source_surface: "home" },
+  });
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false);
+});
+
+test("ingest drops payloads missing source_surface without forwarding", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const req = createMockRequest({
+    event: "market_viewed",
+    envelope: {},
+  });
+  const response = await ingest(req, mockCapture as any);
+
+  assert.equal(response.status, 204);
+  assert.equal(forwarded, false);
+});
+
+test("ingest respects DNT and Sec-GPC opt-out headers", async () => {
+  let forwarded = false;
+  const mockCapture = async () => {
+    forwarded = true;
+    return { sent: true };
+  };
+
+  const optOutHeaders: Record<string, string>[] = [{ dnt: "1" }, { "sec-gpc": "1" }];
+  for (const optOutHeader of optOutHeaders) {
+    forwarded = false;
+    const req = createMockRequest(
+      { event: "market_viewed", envelope: { source_surface: "home" } },
+      optOutHeader,
+    );
+    const response = await ingest(req, mockCapture as any);
+    assert.equal(response.status, 204);
+    assert.equal(forwarded, false, `opt-out via ${JSON.stringify(optOutHeader)} must drop without forwarding`);
+  }
+});
+
+test("POST route handler successfully processes requests end-to-end", async () => {
+  const req = createMockRequest({
+    event: "market_viewed",
+    envelope: { source_surface: "explorer" },
+    properties: { unsupported_mode: false },
+  });
+  const response = await POST(req as any);
+  assert.equal(response.status, 204);
+});
+

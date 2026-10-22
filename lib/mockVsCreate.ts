@@ -1,31 +1,31 @@
 import type { VSData } from "@/lib/contract";
 import { ZERO_ADDRESS } from "@/lib/constants";
 
-/** Query `?demo=1` en `/vs/create` activa el flujo sin contrato. */
+/** Query `?demo=1` on `/vs/create` enables the contract-less flow. */
 export const MOCK_CREATE_DEMO_QUERY = "demo";
 
-/** VS de plantilla + merge con snapshot de sesión (no está en Explore). */
+/** Template VS merged with the session snapshot (not shown in Explore). */
 export const MOCK_CREATED_VS_ID = -4;
 
 const STORAGE_KEY = "proven:create-mock-vs-v1";
 
 /**
- * Dirección mostrada en ticket / merge cuando no hay wallet en modo demo.
+ * Address shown in the ticket / merge when there is no wallet in demo mode.
  *
  * A real, checksum-valid `G…` strkey. The demo ticket runs it through
  * `shortenAddress` and `getExplorerAddressUrl`, and the latter picks a
- * stellar.expert route by strkey type — an EVM-shaped stand-in silently produced
- * a link that 404s.
+ * stellar.expert route based on the strkey type — an EVM-shaped stand-in silently
+ * produced a link that 404s.
  */
 export const MOCK_DEMO_CREATOR_ADDRESS =
   "GAIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCF6M";
 
 /**
- * Hashes ficticios; no son txs reales en explorer.
+ * Fake hashes; they are not real transactions on the explorer.
  *
  * 64 lowercase hex characters with NO `0x` prefix — a Stellar transaction hash is
  * a bare SHA-256 digest, and stellar.expert's `/tx/:hash` route does not accept
- * the prefixed form the EVM version used here.
+ * the prefixed form that the EVM version used here.
  */
 export const MOCK_WALLET_TX_HASH = "d3".repeat(32);
 export const MOCK_CONSENSUS_TX_HASH = "c0".repeat(32);
@@ -106,7 +106,7 @@ export function clearCreateMockSnapshot(): void {
   }
 }
 
-/** Plantilla mínima para `SAMPLE_VS`; el detalle fusiona con `readCreateMockSnapshot`. */
+/** Minimal template for `SAMPLE_VS`; the detail view merges it with `readCreateMockSnapshot`. */
 export function buildMockCreatedVsTemplate(): VSData {
   return {
     id: MOCK_CREATED_VS_ID,

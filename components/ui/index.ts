@@ -17,6 +17,7 @@ export {
   RivalryPanelSkeleton,
   DashboardPanelSkeleton,
   ExplorerPanelSkeleton,
+  StatsPanelSkeleton,
 } from "./AsyncPanelSkeleton";
 export { default as PoolBadge } from "./PoolBadge";
 export { default as CountdownTimer } from "./CountdownTimer";

@@ -163,6 +163,18 @@ fn offset_equal_to_total_returns_empty_items() {
 }
 
 #[test]
+fn empty_roster_with_limit_zero_returns_empty_page() {
+    let f = Fixture::new(0, 0);
+    let creator = f.user(100 * USDC);
+    let id = f.client().create_claim(&creator, &f.params(10 * USDC));
+
+    let page = f.client().get_challengers_page(&id, &0, &0);
+    assert_eq!(page.total, 0);
+    assert_eq!(page.offset, 0);
+    assert_eq!(page.items.len(), 0);
+}
+
+#[test]
 fn offset_total_minus_one_returns_single_last_entry() {
     let f = Fixture::new(0, 0);
     let id = setup_claim_with_challengers(&f, 4);

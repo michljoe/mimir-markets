@@ -11,6 +11,9 @@ use crate::types::{
     ORACLE_TIMELOCK_SECONDS, RESULT_CANCELLED, SIDE_A, SIDE_B,
 };
 
+#[cfg(test)]
+mod payout_fixtures;
+
 /// The fee on one winning claim: `floor(profit * fee_bps / BPS_DIVISOR)`.
 ///
 /// Fees apply to PROFIT only, so a winner never receives less than their

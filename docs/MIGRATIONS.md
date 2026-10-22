@@ -25,6 +25,9 @@ up/down chain so operators can:
 
 ## Quick start (no secrets)
 
+By default the runner uses the in-memory fixture store (`lib/migrations/memory-store.ts`).
+Nothing reads `DATABASE_URL` unless you opt in with `--live`.
+
 ```bash
 # Show registered vs applied (fixture store).
 npm run migrate:status
@@ -40,7 +43,66 @@ npm run migrate:verify
 ```
 
 All of the above default to `--fixture` (in-memory). They exit `0` on success
-and `1` on checksum / step failure. Nothing reads `DATABASE_URL`.
+and `1 ` on checksum / step failure. Nothing reads `DATABASE_URL` in fixture
+mode.
+
+---
+
+## Live mode (Postgres)
+
+Pass `--live` to apply migrations to a real Postgres database. This selects the
+reviewed `PostgresMigrationStore` and requires `DATABASE_URL` to be set.
+
+```bash
+# Show status against the live database.
+DATABASE_URL="postgres://user:pass@localhost:5432/db" npm run migrate:status -- --live
+
+# Apply pending migrations.
+DATABASE_URL="postgres://user:pass@localhost:5432/db" npm run migrate:up -- --live
+
+# Revert the latest reversible migration.
+DATABASE_URL="postgres://user:pass@localhost:5432/db" npm run migrate:down -- --live
+```
+
+If `--live` is passed without `DATABASE_URL`, the runner exits non-zero with a
+message telling you to set it (or drop `--live`). `--fixture` is the default and
+always wins if both flags are present.
+
+### What the Postgres store does
+
+- Maintains the `schema_migrations` ledger (`version`,
+  `id`, `checksum`, `applied_at`).
+- Computes checksums via `lib/migrations/checksum.ts` and compares them to
+  the ledger before applying anything.
+- Takes a session-level advisory lock (`ha...` key derived from the ledger
+  table name) for the duration of a run, so concurrent runners block instead of
+  interleaving.
+- Runs each migration in its own transaction and writes the ledger row in the
+  same transaction, so a mid-migration error leaves the prior state intact.
+
+### Local Postgres for testing
+
+You can run a throw-away Postgres in Docker to exercise the live path:
+
+```bash
+docker run --rm -d name migrations-pg \
+  -e 'POSTGRES_PASSWORD=postgres' \
+  -p 5432:5432 \
+  postgres:16
+
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
+  npm run migrate:up -- --live
+
+# Running again is a no-op.
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
+  npm run migrate:up -- --live
+
+docker stop migrations-pg
+```
+
+The unit tests in `tests/node/migrations.test.ts` use a fake pool to assert
+the SQL sequence (lock → checksum compare → transaction → commit), so the Docker
+step is optional and not required in CI.
 
 ---
 
@@ -51,7 +113,8 @@ registry (lib/migrations/registry.ts)
     ↓
 runner plan (up ascending / down descending)
     ↓
-MigrationStore transaction (MemoryMigrationStore in fixture mode)
+MigrationStore transaction (MemoryMigrationStore in fixture mode,
+                               PostgresMigrationStore in live mode)
     ↓
 schema_migrations ledger row written or removed
 ```
@@ -88,6 +151,7 @@ environment — add a new version instead. Checksum mismatches fail closed.
 | Checksum mismatch vs ledger | Status + migrate refuse |
 | Down on irreversible without flag | Step fails with actionable message |
 | Transaction error mid-up | Ledger row not recorded; prior state kept |
+| Concurrent runners | Second runner blocks on the advisory lock |
 | Secrets in error text | Redacted before surfacing |
 
 ---
@@ -98,14 +162,17 @@ environment — add a new version instead. Checksum mismatches fail closed.
 migration runner is the **release control plane**: it records versions, proves
 reversibility for new changes, and blocks unsafe downs. Version `2` matches the
 existing `base-platform-schema-v2` ledger seed so both stay aligned.
+Moving the `ensureSchema` SQL into migrations is a separate follow-up.
 
 ---
 
 ## Operational impact
 
 - **Release:** run `npm run migrate:verify` in CI / pre-release; treat failures
-  as a hard gate for schema-changing releases.
-- **Rollback:** `npm run migrate:down` reverts the latest reversible migration
-  only. Baseline versions stay blocked on purpose.
-- **Secrets / env:** fixture mode never needs `DATABASE_URL`. Do not paste
-  connection strings into issues, PR bodies, or migration SQL.
+  as a hard gate for schema-changing releases. For the live database, run
+  `npm run migrate:up -- --live` with `DATABASE_URL` configured.
+- **Rollback:** `npm run migrate:down -- --live` reverts the latest reversible
+  migration only. Baseline versions stay blocked on purpose.
+- `**Secrets / env:** fixture mode never needs `DATABASE_URL`. Live mode reads it
+  from the environment only. Do not paste connection strings into issues, PR
+  bodies, or migration SQL.

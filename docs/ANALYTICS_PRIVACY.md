@@ -9,9 +9,11 @@ send directly to PostHog.
 Each event name has an allowlist in `EVENT_PROPERTY_SCHEMA`. Add a property there and
 add positive, negative, and regression coverage in `tests/node/analytics.test.ts`.
 Unknown, mistyped, non-finite, secret-shaped, overlong, or structurally excessive
-values are dropped before serialization. Raw Stellar identities and secret seeds are
-never analytics properties. The sole address exception is the public top-level
-`contract` C-strkey.
+values are dropped before serialization. Payloads over `MAX_EVENT_PAYLOAD_BYTES` (64 KiB)
+are silently dropped (204) at ingest, and client properties are trimmed to `MAX_PROPERTIES`
+(64), `MAX_STRING_LENGTH` (200), and `MAX_DEPTH` (5) before capture. Raw Stellar
+identities and secret seeds are never analytics properties. The sole address exception
+is the public top-level `contract` C-strkey.
 
 Human wallet addresses become a stable HMAC-SHA-256 actor id only when the server-only
 `ANALYTICS_ACTOR_SALT` has at least 16 characters. Missing or weak salts, malformed

@@ -1,9 +1,9 @@
-/**
- * Access tiers for API routes (#11).
+/*
+ * Access tiers for API routes (511).
  *
  * Four kinds of caller reach these routes and they need different things checked.
  * Before this, each route decided for itself — which is how one of them ends up
- * reading a secret from the wrong header, or forgeeting a rate limit, and nobody
+ * reading a secret from the wrong header, or forgetting a rate limit, and nobody
  * notices because there is no single place to look.
  *
  *   public_read        anyone, including an OG scrapper with no session
@@ -26,6 +26,7 @@
  *    endpoint.
  */
 
+import { WeakSecretError, assertStrongSecret } from "../ops/secrets";
 import { apiError, type ApiErrorCode, type ApiErrorResult } from "./errors";
 import { consume, DEFAULT_RULES, type LimitRule, type RateLimitKeys } from "./rate-limit";
 
@@ -153,12 +154,12 @@ function secretsMatch(presented: string, expected: string): boolean {
   return diff === 0;
 }
 
-export function authorizeRequest(
+export async function authorizeRequest(
   tier: AccessTier,
   ctx: RequestContext,
   rules: LimitRule[] = DEFAULT_RULES,
   now = Date.now(),
-): AuthorizeResult {
+): Promise<AuthorizeResult> {
   const policy = TIER_POLICIES[tier];
   const refuse = (code: ApiErrorCode, detail: string): AuthorizeResult => ({
     allowed: false,
@@ -171,6 +172,16 @@ export function authorizeRequest(
     // An unset secret refuses rather than waves everyone through: a deploy that
     // forgets it must fail closed, not open.
     if (!expected) return refuse("forbidden", "worker secret is not configured");
+    // A short or placeholder CRON_SECRET is a production misconfiguration, not a
+    // caller problem. Refuse with the variable named instead of throwing a 500
+    // from deep inside the check. Outside production this only warns, so the
+    // CI value (`mimir-ci-coverage-test`) keeps working.
+    try {
+      assertStrongSecret("CRON_SECRET", expected);
+    } catch (error) {
+      if (error instanceof WeakSecretError) return refuse("forbidden", error.message);
+      throw error;
+    }
     const presented = ctx.presentedSecret?.trim() ?? "";
     if (!presented || !secretsMatch(presented, expected)) {
       return refuse("unauthenticated", "invalid worker credentials");
@@ -209,7 +220,9 @@ export function authorizeRequest(
     agentId: policy.limitDimensions.includes("agent") ? ctx.agentId : undefined,
   };
   const applicable = rules.filter((rule) => policy.limitDimensions.includes(rule.dimension));
-  const decision = consume(keys, applicable, now);
+  // consume() is async because an optional Postgres-backed store can be selected;
+  // the default in-memory store resolves immediately.
+  const decision = await consume(keys, applicable, now);
   if (!decision.allowed) {
     return refuse(
       "rate_limited",
@@ -227,7 +240,7 @@ export function authorizeRequest(
  * mistake is caught where the route is declared instead of only when a request
  * happens to arrive.
  */
-export function assertTierCanMutate(tier: AccessTier): void {
+export function assertTierCanmutate(tier: AccessTier): void {
   if (tier === "public_read") {
     throw new Error("public_read routes cannot move value or change authority");
   }

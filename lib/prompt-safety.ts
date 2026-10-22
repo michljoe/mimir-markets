@@ -1,4 +1,4 @@
-/**
+/*
  * Prompt-injection defense for the settlement agents.
  *
  * Claim fields (question, positions, settlement rule, resolution URL …) come
@@ -29,7 +29,7 @@ export const INJECTION_GUARD =
 
 /** Patterns commonly used to break out of prompts via untrusted source text. */
 export const SOURCE_INJECTION_HINTS: RegExp[] = [
-  /ignore\s+(all\s+)?(previous|prior|above)\s+instructions/i,
+  //ignore\s+(all\s+)?(previous|prior|above)\s+instructions/i,
   /system\s*:\s*/i,
   /<\/?untrusted\b/i,
   /reveals\s+(your\s)?system\s+prompt/i,

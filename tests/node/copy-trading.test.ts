@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { copyPolicyHash, evaluateCopy, validateCopyPermission, worstCaseCopySpend, type CopyExecutionContext, type CopyPermission, type CopySignal } from "../../lib/copy-trading";
+import { copyPolicyHash, evaluateCopy, validateCopyPermission, worstCaseCopySpend, computeCopyUsageFromExecutions, type CopyExecutionContext, type CopyPermission, type CopySignal, type CopyUsageExecutionRow } from "../../lib/copy-trading";
 import { buildCopyExecutionDryRun } from "../../lib/copy-execution-dry-run";
 
 // ── Every atomic figure here is 7 decimals ──────────────────────────────────
@@ -124,4 +124,95 @@ test("malformed and mismatched signals fail closed without throwing", () => {
     openExposureUsdc: 0, realizedLossAtomic: "0" } }))), "malformed_context");
   assert.equal(reason(evaluateCopy(permission(), signal(), context({ usage: { usedTodayUsdc: 1n as unknown as number,
     usedThisWeekUsdc: 0, openExposureUsdc: 0, realizedLossAtomic: "0" } }))), "malformed_context");
+});
+
+// ── Usage from executions (permission-card budget bars) ──────────────────────
+// NOW is 2026-05-28T20:26:40Z (Thursday). Windows are UTC-aligned: the day
+// from 00:00 UTC, the week from Monday 2026-05-25T00:00:00Z.
+const DAY_START = 1_779_926_400_000; // 2026-05-28T00:00:00.000Z
+const WEEK_START = 1_779_667_200_000; // 2026-05-25T00:00:00.000Z
+const execution = (overrides: Partial<CopyUsageExecutionRow> = {}): CopyUsageExecutionRow => ({
+  status: "executed", stake_atomic: String(UNIT), created_at: NOW, ...overrides });
+
+test("executed stakes land in the UTC day/week/open buckets", () => {
+  const usage = computeCopyUsageFromExecutions([
+    execution(),
+    execution({ stake_atomic: String(2n * UNIT) }),
+    execution({ created_at: DAY_START - 1 }),              // yesterday: week + open only
+    execution({ created_at: WEEK_START - 1 }),             // last week: open only
+  ], NOW);
+  assert.equal(usage.usedTodayUsdc, 3);
+  assert.equal(usage.usedThisWeekUsdc, 4);
+  assert.equal(usage.openExposureUsdc, 5);
+  assert.equal(usage.dailyUsedAtomic, "30000000");
+  assert.equal(usage.weeklyUsedAtomic, "40000000");
+  assert.equal(usage.openExposureAtomic, "50000000");
+  assert.equal(usage.countedExecutions, 4);
+  // Window-open rows belong to the window they open.
+  const boundary = computeCopyUsageFromExecutions([
+    execution({ created_at: DAY_START }), execution({ created_at: WEEK_START })], NOW);
+  assert.equal(boundary.usedTodayUsdc, 1);
+  assert.equal(boundary.usedThisWeekUsdc, 2);
+  assert.equal(boundary.openExposureUsdc, 2);
+});
+
+test("only executed rows count and spend never fabricates realized loss", () => {
+  const usage = computeCopyUsageFromExecutions([
+    execution(),
+    execution({ status: "skipped", stake_atomic: String(9n * UNIT) }),
+    execution({ status: "failed", stake_atomic: String(9n * UNIT) }),
+    execution({ status: "expired", stake_atomic: String(9n * UNIT) }),
+  ], NOW);
+  assert.equal(usage.usedTodayUsdc, 1);
+  assert.equal(usage.openExposureUsdc, 1);
+  assert.equal(usage.countedExecutions, 1);
+  // The loss ceiling needs settlement outcomes, which audit rows do not carry.
+  assert.equal("realizedLossAtomic" in usage, false);
+});
+
+test("usage totals feed evaluateCopy with the gate's own view of the caps", () => {
+  const rows = [execution({ stake_atomic: String(4n * UNIT) }), execution({ stake_atomic: String(3n * UNIT) }),
+    execution({ stake_atomic: String(2n * UNIT) }), execution({ created_at: DAY_START - 1, stake_atomic: String(9n * UNIT) })];
+  const usage = computeCopyUsageFromExecutions(rows, NOW);
+  const derived = { usedTodayUsdc: usage.usedTodayUsdc, usedThisWeekUsdc: usage.usedThisWeekUsdc,
+    openExposureUsdc: usage.openExposureUsdc, realizedLossAtomic: "0" };
+  // daily 9 + 3 USDC stake exceeds the 10 USDC cap.
+  assert.equal(reason(evaluateCopy(permission(), signal(), context({ now: NOW, usage: derived }))), "daily_cap");
+  // The helper's display numbers pass the gate's malformed-context screen and
+  // 9 + 0.5 stays under the cap — usage is admitted exactly as computed.
+  assert.deepEqual(evaluateCopy(permission(), signal({ stakeUsdc: 0.5 }), context({ now: NOW, usage: derived })),
+    { allowed: true, stakeUsdc: 0.5 });
+  // Open exposure 18 (daily/weekly emptied) blocks the 3 USDC stake on its own cap.
+  assert.equal(reason(evaluateCopy(permission(), signal(),
+    context({ now: NOW, usage: { ...derived, usedTodayUsdc: 0, usedThisWeekUsdc: 0 } }))), "open_exposure_cap");
+});
+
+test("malformed execution rows are skipped without throwing", () => {
+  const usage = computeCopyUsageFromExecutions([
+    execution(),
+    execution({ stake_atomic: "-1" }),
+    execution({ stake_atomic: "1e7" }),
+    execution({ stake_atomic: 1.5 }),
+    execution({ created_at: "not-a-time" }),
+    execution({ created_at: undefined, stake_atomic: undefined }),
+    null as unknown as CopyUsageExecutionRow,
+  ], NOW);
+  assert.equal(usage.usedTodayUsdc, 1);
+  assert.equal(usage.countedExecutions, 1);
+});
+
+test("seconds-epoch and camelCase rows are accepted", () => {
+  const usage = computeCopyUsageFromExecutions([
+    { status: "executed", stakeAtomic: "10000000", createdAt: Math.floor(NOW / 1000) },
+  ], NOW);
+  assert.equal(usage.usedTodayUsdc, 1);
+  assert.equal(usage.openExposureUsdc, 1);
+});
+
+test("reset stamps are the next UTC midnight and next Monday", () => {
+  const usage = computeCopyUsageFromExecutions([], NOW);
+  assert.equal(usage.nextDailyResetAtMs, DAY_START + 86_400_000);
+  assert.equal(usage.nextWeeklyResetAtMs, WEEK_START + 7 * 86_400_000);
+  assert.equal(new Date(usage.nextDailyResetAtMs).toISOString(), "2026-05-29T00:00:00.000Z");
+  assert.equal(new Date(usage.nextWeeklyResetAtMs).toISOString(), "2026-06-01T00:00:00.000Z");
 });

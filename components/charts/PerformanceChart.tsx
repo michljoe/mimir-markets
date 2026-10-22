@@ -1,22 +1,31 @@
 "use client";
 
 /**
- * One line chart for both agent P&L and basket NAV.
+ * One line chart for oth agent P&amp;L and basket NAV.
  *
  * Inline SVG rather than a charting library: this is a path, a baseline and a
  * hover readout — a chart dependency would ship more JavaScript than the rest of
  * the page. Colours come from theme tokens so it inverts with the palette.
  *
- * The line draws itself on mount via stroke-dashoffset, which animates on the
+ * The line draws itself on mount via stroke-dasharray, which animates on the
  * compositor rather than by re-rendering React on every frame. Anyone who asked
  * their system not to animate gets the finished line immediately.
+ *
+ * Keyboard and screen-reader users can't hover, so a "Show data" toggle
+ * reveals a table of the same points (last MAX_TABLE_ROWS).
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import {
+  buildPerformanceChartRows,
+  formatChartDay,
+  MAX_TABLE_ROWS,
+} from "@/lib/performance-chart-rows";
+
 export interface ChartPoint {
   timestamp: number;
-  /** Display units — USDC for both NAV and cumulative P&L. */
+  /** Display units — USDC for both NAV and cumulative P&amp;L. */
   value: number;
 }
 
@@ -26,7 +35,7 @@ const PAD_X = 10;
 const PAD_Y = 14;
 
 function formatDay(timestamp: number): string {
-  return new Date(timestamp).toISOString().slice(5, 10);
+  return formatChartDay(timestamp);
 }
 
 export function PerformanceChart({
@@ -39,7 +48,7 @@ export function PerformanceChart({
   height = 180,
 }: {
   points: ChartPoint[];
-  /** The line drawn as "flat": starting NAV, or zero for cumulative P&L. */
+  /** The line drawn as "flat": starting NAV, or zero for cumulative P&amp;L. */
   baseline: number;
   label: string;
   valueSuffix?: string;
@@ -48,8 +57,10 @@ export function PerformanceChart({
   height?: number;
 }) {
   const gradientId = useId();
+  const tableId = useId();
   const [drawn, setDrawn] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
+  const [showData, setShowData] = useState(false);
   const pathRef = useRef<SVGPathElement>(null);
   const invalid = !Number.isFinite(baseline) || points.some((point) =>
     !Number.isFinite(point.timestamp) || point.timestamp <= 0 || !Number.isFinite(point.value)
@@ -81,8 +92,7 @@ export function PerformanceChart({
     const line = points.length === 1
       ? `M${PAD_X},${coords[0].y} L${VIEW_WIDTH - PAD_X},${coords[0].y}`
       : coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
-    const area = `${line} L${(points.length === 1 ? VIEW_WIDTH - PAD_X : coords.at(-1)!.x).toFixed(1)},${VIEW_HEIGHT - PAD_Y} L${PAD_X},${VIEW_HEIGHT - PAD_Y} Z`;
-
+    const area = `${line} L${points.length === 1 ? VIEW_WIDTH - PAD_X : coords.at(-1)!.x.toFixed(1)},${VIEW_HEIGHT - PAD_Y} L${PAD_X},${VIEW_HEIGHT - PAD_Y} Z`;
     return { coords, line, area, baselineY: y(baseline) };
   }, [points, baseline, invalid]);
 
@@ -99,7 +109,7 @@ export function PerformanceChart({
 
   if (!geometry) {
     return (
-      <div className="border border-pv-ink/[0.1] bg-pv-surface/40 px-4 py-12 text-center text-sm text-pv-muted">
+      <div className="border border-pv-ink/[0.1] bv-surface/40 px-4 py-12 text-center text-sm text-pv-muted">
         {emptyMessage}
       </div>
     );
@@ -112,6 +122,7 @@ export function PerformanceChart({
   const activePoint = points[active];
   const activeCoord = geometry.coords[active];
   const length = pathRef.current?.getTotalLength?.() ?? 2000;
+  const table = buildPerformanceChartRows(points, valueSuffix);
 
   return (
     <figure className="border border-pv-ink/[0.1] bg-pv-surface/40 p-3">
@@ -152,7 +163,7 @@ export function PerformanceChart({
           style={{
             strokeDasharray: length,
             strokeDashoffset: drawn ? 0 : length,
-            transition: "stroke-dashoffset 900ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transition: "stroke-dasharray 900ms cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         />
 
@@ -197,6 +208,46 @@ export function PerformanceChart({
         </span>
         <span>{formatDay(last.timestamp)}</span>
       </figcaption>
+
+      <div className="mt-3 flex flex-col items-start gap-2">
+        <button
+          type="button"
+          aria-expanded={showData}
+          aria-controls={tableId}
+          onClick={() => setShowData((value) => !value)}
+          className="rounded-sm border border-pv-ink/[0.15] px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-pv-muted hover:text-pv-text focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-pv-accent"
+        >
+          {showData ? "Hide data" : "Show data"}
+        </button>
+        {showData && (
+          <div id={tableId} className="max-h-64 w-full overflow-auto">
+            <table className="w-full border-collapse text-left font-mono text-xs text-pv-text">
+              <caption className="py-1 text-left text-pv-muted">
+                {label}
+              </caption>
+              <thead>
+                <tr className="text-pv-muted">
+                  <th scope="col" className="py-1 pr-3 font-semibold">Date</th>
+                  <th scope="col" className="py-1 font-semibold">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, index) => (
+                  <tr key={`${row.date}-${index}`}>
+                    <td className="py-0.5 pr-3">{row.date}</td>
+                    <td className="py-0.5">{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {table.truncated && (
+              <p className="mt-1 text-xs text-pv-muted">
+                Showing the last {table.rows.length} of {table.total} points.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </figure>
   );
 }

@@ -1,4 +1,10 @@
 {
+  "liveDeadline": {
+    "phaseOpen": "OPEN",
+    "phaseLocked": "LOCKED",
+    "phaseVerifying": "VERIFYING",
+    "phaseSettled": "SETTLED"
+  },
   "metadata": {
     "title": "Mimir Markets",
     "description": "1v1 prediction challenges settled by AI. No referees. No arguments. Mimir decides."
@@ -1076,7 +1082,11 @@
     "claimPayoutError": "Could not collect the payout.",
     "claimPayoutRejected": "Payout signature rejected in your wallet.",
     "claimPayoutCollected": "Payout collected.",
-    "claimPayoutChecking": "Checking your payout..."
+    "claimPayoutChecking": "Checking your payout...",
+    "parkedPayoutTitle": "Parked payout",
+    "parkedPayoutHint": "Your payout could not be delivered — the USDC trustline refused the transfer (it is frozen or deauthorized) — so the contract parked it for you instead of keeping your money. Nothing expires: withdraw it once your trustline can receive USDC.",
+    "parkedWithdrawError": "Could not withdraw the parked payout.",
+    "parkedWithdrawRejected": "Withdrawal signature rejected in your wallet."
   },
   "wallet": {
     "noWallet": "No Stellar wallet found. Install Freighter, xBull, Lobstr or Hana.",
@@ -1260,7 +1270,17 @@
   "emergingNarratives": {
     "title": "EMERGING NARRATIVES",
     "lead": "Opportunities to generate new challenges from emerging signals and storylines.",
-    "comingSoon": "COMMING SOON"
+    "rank": "Rank {rank}",
+    "momentum": "Momentum",
+    "newMarkets": "New markets · recent / previous",
+    "newStake": "New stake · recent / previous (USDC)",
+    "windowLabels": "Recent 7 days / previous 7 days",
+    "marketStake": "Stake: {amount} USDC",
+    "viewCategory": "View {category} markets",
+    "emptyTitle": "No emerging activity yet",
+    "emptyDescription": "New markets and stake activity will appear here as categories gain momentum.",
+    "errorTitle": "Narratives could not be loaded",
+    "errorDescription": "The market index is temporarily unavailable. Refresh the page to try again."
   },
   "reasoningFeed": {
     "title": "Agent reasoning",
@@ -1323,5 +1343,42 @@
       "cancelled": "Cancelled",
       "dependency_failure": "Bad hash"
     }
+  },
+  "contract": {
+    "already_challenged": "A challenger has already entered this challenge. Join the existing challenge instead.",
+    "already_claimed_payout": "This challenger already collected their settlement.",
+    "chain_unavailable": "The contract is temporarily unavailable. Refresh and try again.",
+    "challenge_window_closed": "The challenge window is closed. This claim is no longer accepting challenges.",
+    "challengers_did_not_win": "The challenger side did not win this claim, so this payout was not awarded. Check the final outcome before collecting.",
+    "claim_full": "This market has reached the maximum number of challengers. Choose another one or wait for a slot to open.",
+    "claim_not_active": "This challenge is no longer active for new stakes. Review the current state first.",
+    "claim_not_found": "We could not read that challenge. Check the link or load the market again.",
+    "claim_not_open": "This challenge is closed to new stakes. Review the current state before acting.",
+    "claim_not_resolved": "That action only works after the market has been resolved.",
+    "deadline_in_past": "The deadline is in the past. Use a future deadline so the marketplace can accept the entry.",
+    "duel_needs_equal_stake": "A duel needs a stake that exactly matches the creator's. Adjust your stake and try again.",
+    "empty_question": "Every challenge needs a question. Write the outcome you want to settle, then try again.",
+    "fee_cap_exceeded": "Fee policy changes are capped at the configured limit. Reduce the total fee and try again.",
+    "fee_needs_recipient": "A fee recipient must be set before this policy can be queued.",
+    "fee_policy_not_ready": "The queued fee policy is not ready yet. Wait for the stated window to open.",
+    "insufficient_creation_liquidity": "This creator liquidity is not sufficient for the amount you offered. Reduce your stake or choose a market with more attached capacity.",
+    "invalid_invite_key": "That invite link is not valid. Ask the creator for the current invite link.",
+    "invalid_request": "This request cannot be completed as written. Check the input and try again.",
+    "invalid_verdict": "The verdict you tried to record is not valid. Confirm the winner side and try again.",
+    "invite_key_too_long": "That invite key is too long. Use a shorter invite link.",
+    "no_fees": "There are no accrued fees to claim right now.",
+    "not_a_challenger": "You are not listed as a challenger on this claim, so you cannot pull this payout.",
+    "not_creator": "Only the creator of this challenge can perform that action.",
+    "not_yet_expired": "This deadline has not ended yet, so that action cannot be taken now.",
+    "nothing_queued": "There is no fee policy waiting to be applied.",
+    "nothing_to_withdraw": "There is nothing parked for you yet. Withdrawals from funded markets stay open.",
+    "overflow": "The requested action would exceed what the contract can hold. Reduce the amount and try again.",
+    "payout_exceeds_escrow": "The payout that was attempted is larger than the money held by the market. This is a contract state issue; try again with a smaller amount.",
+    "self_challenge": "You cannot challenge your own claim. Open a challenge against another claim.",
+    "stake_too_small": "Your stake is below the minimum. Enter at least the configured minimum stake for this market.",
+    "timelocked": "This fee policy is still inside its approved time window. Try again after it opens.",
+    "unsupported_decimals": "This market requires the expected token scale. Please use the configured asset so your amount is read correctly.",
+    "unsupported_token": "The token this market is configured for cannot be accepted. This market only supports the configured asset. Choose another market.",
+    "zero_stake": "Stake must be greater than zero."
   }
 }

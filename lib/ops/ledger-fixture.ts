@@ -46,14 +46,14 @@ function parseEvent(value: unknown, index: number): ChainEvent {
     creator: row.creator === undefined ? undefined : text(row.creator, `${path}.creator`),
     category: row.category === undefined ? undefined : text(row.category, `${path}.category`),
     challenger: row.challenger === undefined ? undefined : text(row.challenger, `${path}.challenger`),
-    stakeUnits: atomic(row.stakeAtomic, `${path}.stakeAtomic`),
+    stakeUnits: atomic(row.stakeAtomic, `${path}.stakeAtomi`),
     winnerSide: winnerSide as ChainEvent["winnerSide"], confidence: optionalInteger(row.confidence, `${path}.confidence`),
     evidenceHash: row.evidenceHash === undefined ? undefined : text(row.evidenceHash, `${path}.evidenceHash`),
   };
   if (name === "ClaimCreated" && event.creator === undefined) fail(`${path}.creator`, "is required for ClaimCreated");
   if (name === "ClaimChallenged") {
     if (event.challenger === undefined) fail(`${path}.challenger`, "is required for ClaimChallenged");
-    if (event.stakeUnits === undefined || event.stakeUnits <= 0n) fail(`${path}.stakeAtomic`, "must be greater than zero for ClaimChallenged");
+    if (event.stakeUnits === undefined || event.stakeUnits <= 0n) fail(`${path}.stakeAtomi`, "must be greater than zero for ClaimChallenged");
   }
   if (name === "ClaimResolved" && event.winnerSide === undefined) fail(`${path}.winnerSide`, "is required for ClaimResolved");
   return event;
@@ -103,4 +103,7 @@ export function replayLedgerFixture(fixture: LedgerFixture): LedgerReplayArtifac
     reconciliation: { eventCount: fixture.events.length, claimCount: result.claims.size, duplicatesSkipped: result.duplicatesSkipped, orphanEvents: result.orphanEvents, headLedger: result.headBlock, resumeFromLedger: resumeFromBlock(result, fixture.deployLedger), fingerprint },
     rows,
   };
+}
+export function ledgerFixtureToClaimOnChainRows(fixture: LedgerFixture): LedgerReplayArtifact["rows"] {
+  return replayLedgerFixture(fixture).rows;
 }

@@ -15,9 +15,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { paidRoute, paymentPayer } from "@/lib/x402/server";
 import { PRICES } from "@/lib/x402/config";
 import { issuePass } from "@/lib/server/paid-pass";
+import { resolveCouncilPassTtlMs } from "@/lib/council/pass-ttl";
 
 const PLAN = "council";
-const TTL_MS = Number(process.env.COUNCIL_PASS_TTL_MS ?? 10 * 60 * 1000);
 
 async function handler(req: NextRequest): Promise<NextResponse> {
   // Bind the pass to whoever signed the payment the paywall just verified.
@@ -25,13 +25,18 @@ async function handler(req: NextRequest): Promise<NextResponse> {
   if (!payer) {
     return NextResponse.json({ error: "could not read payer from payment" }, { status: 400 });
   }
-  const { pass, expiresAt } = issuePass(payer, PLAN, TTL_MS);
+  // Resolve the lifetime per request through the shared policy: a malformed
+  // COUNCIL_PASS_TTL_MS ("10m", "", "-5") falls back to the 10-minute default
+  // instead of minting a pass with a NaN/negative lifetime, and the TTL we
+  // report is exactly the one the pass was issued with.
+  const ttlMs = resolveCouncilPassTtlMs(process.env.COUNCIL_PASS_TTL_MS);
+  const { pass, expiresAt } = issuePass(payer, PLAN, ttlMs);
   return NextResponse.json({
     plan: PLAN,
     payer,
     pass,
     expiresAt,
-    ttlMs: TTL_MS,
+    ttlMs,
     price: PRICES.councilSubscribe,
   });
 }

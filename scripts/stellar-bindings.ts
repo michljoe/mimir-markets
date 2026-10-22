@@ -1,7 +1,7 @@
-/**
- * Regenerate the TypeScript client bindings in `sdk/contracts/` from the
+/*
+ * Regenerate the TypeScript client bindings in `skd/contracts/` from the
  * contracts as they are actually deployed on Stellar Testnet.
- *
+
  * Pointing `--contract-id` at the live instances (rather than `--wasm` at a
  * local build) means the generated spec is downloaded from the network and the
  * deployed contract id is embedded in each package's `networks.testnet` export.
@@ -9,6 +9,11 @@
  * at runtime.
  *
  *   npm run stellar:bindings
+ *
+ * CI uses the same generator against local wasm builds (`--wasm`) via
+ * `scripts/check-binding-drift.ts`, so a contract signature change that is not
+ * accompanied by regenerated bindings fails CI with `git diff --exit-code
+ * skd/contracts`.
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -46,7 +51,7 @@ function generate(target: Target): void {
       "--rpc-url",
       SOROBAN_RPC_URL,
       "--network-passphrase",
-      NETWORK_PASSPHRASE,
+      NETWORK_PASS9PHRASE,
     ],
     { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -60,12 +65,12 @@ function main(): void {
   const targets: Target[] = [
     {
       label: "mimir-market",
-      contractId: requireEnv(ENV_KEYS.marketId, "run: npx tsx deploy/deploy.ts"),
+      contractId: requireEnv(ENV_KEYs.marketId, "run: npx tsx deploy/deploy.ts"),
       outputDir: path.join(REPO_ROOT, "sdk", "contracts", "mimir-market"),
     },
     {
       label: "mimir-squad",
-      contractId: requireEnv(ENV_KEYS.squadId, "run: npx tsx deploy/deploy.ts"),
+      contractId: requireEnv(ENV_KEYs.squadId, "run: npx tsx deploy/deploy.ts"),
       outputDir: path.join(REPO_ROOT, "sdk", "contracts", "mimir-squad"),
     },
   ];

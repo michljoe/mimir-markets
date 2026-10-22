@@ -1,4 +1,4 @@
-/**
+/*
  * Public operational status surface.
  *
  * Exposes comprehensive, privacy-safe operational telemetry, deployment status,
@@ -13,7 +13,12 @@
 
 import { NextResponse } from "next/server";
 
-import { getSettlementBacklog, getSyncMeta, isDbConfigured } from "@/lib/db";
+import {
+  getClaimCount,
+  getSettlementBacklog,
+  getSyncMeta,
+  isDbConfigured,
+} from "@/lib/db";
 import {
   evaluateOperationalStatusReport,
   operationalHttpStatus,
@@ -24,6 +29,40 @@ import type { HealthSnapshot } from "@/lib/ops/health";
 export const dynamic = "force-dynamic";
 
 const EMPTY_WINDOW = { attempts: 0, failures: 0 } as const;
+
+export interface IndexLag {
+  claims: number | null;
+  ledgers: number | null;
+  checkedAt: string;
+}
+
+async function computeIndexLag(nowMs: number): Promise<IndexLag> {
+  const checkedAt = new Date(nowMs).toISOString();
+
+  const [claimCount, claimCursorRaw, ledgerCursorRaw, settlementCursorRaw] =
+    await Promise.all([
+      getClaimCount().catch(() => null),
+      getSyncMeta("claim_cursor").catch(() => null),
+      getSyncMeta("ledger_cursor").catch(() => null),
+      getSyncMeta("settlement_cursor").catch(() => null),
+    ]);
+
+  const claimMaxId = Number(claimCursorRaw ?? "0");
+  const ledgerMaxId = Number(ledgerCursorRaw ?? "0");
+  const settlementCursor = Number(settlementCursorRaw ?? "0");
+
+  const claims =
+    claimCount !== null && Number.isFinite(claimMaxId)
+      ? Math.max(0, claimCount - claimMaxId)
+      : null;
+
+  const ledgers =
+    Number.isFinite(ledgerMaxId) && Number.isFinite(settlementCursor)
+      ? Math.max(0, ledgerMaxId - settlementCursor)
+      : null;
+
+  return { claims, ledgers, checkedAt };
+}
 
 export async function GET() {
   const nowMs = Date.now();
@@ -62,6 +101,8 @@ export async function GET() {
       },
     ];
 
+    report.indexLag = { claims: null, ledgers: null, checkedAt: new Date(nowMs).toISOString() };
+
     return NextResponse.json(report, {
       status: 503,
       headers: {
@@ -71,13 +112,14 @@ export async function GET() {
     });
   }
 
-  const [workers, lastSyncAt, backlog, rpc, facilitator, sources] = await Promise.all([
+  const [workers, lastSyncAt, backlog, rpc, facilitator, sources, indexLag] = await Promise.all([
     readWorkerBeats(),
     getSyncMeta("last_sync_at").catch(() => null),
     getSettlementBacklog().catch(() => null),
     readFailureWindow("rpc", nowMs),
     readFailureWindow("facilitator", nowMs),
     readFailureWindow("sources", nowMs),
+    computeIndexLag(nowMs),
   ]);
 
   const lastSyncMs = Number(lastSyncAt ?? "0");
@@ -99,6 +141,8 @@ export async function GET() {
     nowMs,
     healthSnapshot: snapshot,
   });
+
+  report.indexLag = indexLag;
 
   if (backlog === null) {
     report.health.alarms.unshift({

@@ -27,14 +27,14 @@ export type VsXmtpThreadPhase = "idle" | "loading" | "ready" | "error";
 
 export type VsXmtpThreadError = {
   kind: XmtpThreadErrorKind;
-  /** Mensaje técnico (logs / soporte); la UI debe mapear `kind` a i18n. */
+  /** Technical message (logs / support); the UI should map `kind` to i18n. */
   technical: string;
 };
 
 export type UseVsXmtpThreadOptions = {
-  /** Wallet + VS eligible + peer conocido; no exige XMTP listo. */
+  /** Wallet + eligible VS + known peer; does not require XMTP to be ready. */
   threadEligible: boolean;
-  /** Cliente listo (solo con `xmtpStatus === "ready"). */
+  /** Client ready (only when `xmtpStatus === "ready"`). */
   client: XmtpClientInstance | null;
   peerAddress: string;
 };
@@ -44,26 +44,26 @@ export type UseVsXmtpThreadResult = {
   dm: Dm | null;
   messages: DecodedMessage[];
   threadError: VsXmtpThreadError | null;
-  /** El mismo fallo de apertura, ya clasificado para copy y reintento. */
+  /** The same open failure, already classified for copy and retry. */
   threadFailure: XmtpFailure | null;
   /**
-   * Fallo del stream con el hilo ya abierto. No destruye hilo: los mensajes ya
-   * cargados siguen visibles, pero pueden estar desactualizados hasta que se
-   * reabra la conversación. Antes esto solo llegaba a `console.warn` el panel
-   * seguía mostrando un hilo congelado sin ngun aviso.
+   * Stream failure with the thread already open. Does not destroy the thread: already
+   * loaded messages remain visible, but they may be stale until the conversation
+   * is reopened. Previously this only reached `console.warn` and the panel
+   * kept showing a frozen thread without any notice.
    */
   streamFailure: XmtpFailure | null;
   isRefreshing: boolean;
-  /** Sincroniza lista global + hilo y vuelve a cargar mensajes. */
+  /** Synchronizes the global list + thread and reloads messages. */
   refreshThread: () => Promise<void>;
-  /** Reinicia apertura del hilo (p. ej: tras error). */
+  /** Restarts thread opening (e.g. after an error). */
   retryOpenThread: () => void;
   clearThreadError: () => void;
 };
 
 /**
- * Ciclo de vida del DM 1v1 VS: sync/consent (Paso 6), stream en vivo,
- * refresco al volver a la pestaña (throttle) e y refresco manual.
+ * VS 1v1 DM lifecycle: sync/consent (Step 6), live stream,
+ * refresh on returning to the tab (throttled), and manual refresh.
  */
 export function useVsXmtpThread({
   threadEligible,
@@ -86,16 +86,16 @@ export function useVsXmtpThread({
     null
   );
   /**
-   * El mismo fallo de apertura, ya clasificado en la taxonomía que la UI pinta.
-   * `threadError` se conserva porque la maqueta de demo 1v1 decide con
-   * `kind === "peer_unreachable"`, y ese kind histórico no es 1:1 con
-   * `XmtpFailureKind` (p. ej: `network` de `classifyXmtpThreadError` se desglosa
-   * en `network` o `timeout`).
+   * The same open failure, already classified into the taxonomy the UI renders.
+   * `threadError` is kept because the 1v1 demo mock decides with
+   * kind === "peer_unreachable"`, and that legacy `kind` is not 1:1 with
+   * `XmtpFailureKind` (e.g. `network` from `classifyXmtpThreadError` is split
+   * into `network` or `timeout`).
    */
   const [threadFailure, setThreadFailure] = useState<XmtpFailure | null>(null);
   const [streamFailure, setStreamFailure] = useState<XmtpFailure | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  /** Incrementar para forzar re-ejecución del efecto de apertura tras error. */
+  /** Increment to force the open effect to re-run after an error. */
   const [openRetryNonce, setOpenRetryNonce] = useState(0);
 
   const initGen = useRef(0);
@@ -140,10 +140,10 @@ export function useVsXmtpThread({
   }, []);
 
   /**
-   * Registra un fallo de apertura/refresh en las dos formas que consume la UI: la
-   * taxonomía histórica (`kind`, que decide la maqueta de demo) y la de fallo
-   * (copy + política de reintento). Se registramos aquí, junto al error, para que
-   * las dos no puedan derivar a categorías distintas del mismo fallo.
+   * Records an open/refresh failure in the two forms the UI consumes: the
+   * legacy taxonomy (`kind`, which the demo mock decides with) and the failure
+   * taxonomy (copy + retry policy). We record them here, next to the error, so
+   * the two cannot drift into different categories of the same failure.
    */
   const recordThreadError = useCallback(
     (kind: XmtpThreadErrorKind, technical: string, cause?: unknown) => {

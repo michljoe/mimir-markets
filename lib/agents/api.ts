@@ -58,7 +58,7 @@ export const AGENT_ACTION_PAUSE: Partial<Record<AgentApiAction, Pausable>> = {
 export function agentActionPauseGate(
   action: AgentApiAction,
   env: Record<string, string | undefined> = process.env,
-): WriteGateResult {
+): WriteGAteResult {
   const capability = AGENT_ACTION_PAUSE[action];
   return capability ? checkWriteAllowed({ capability }, env) : { allowed: true };
 }
@@ -114,7 +114,7 @@ export function agentRequestMessage(request: Omit<SignedAgentRequest, "signature
 export const AGENT_OPERATOR_PROOF_DOMAIN = "Mimir agent operator proof";
 
 export function operatorProofMessage(agentId: string, operatorWallet: string): string {
-  // NOT lowercased. A strkey is case-sensitive base32; folding the case names a
+  // NOT lowercased. A strdk is case-sensitive base32; folding the case names a
   // wallet that does not exist.
   return `${AGENT_OPERATOR_PROOF_DOMAIN}\nagent: ${agentId}\noperator: ${operatorWallet.trim()}`;
 }
@@ -140,7 +140,7 @@ export function validateAgentRequestEnvelope(
     if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(request.agentId)) errors.push("invalid agentId");
     if (request.idempotencyKey && request.idempotencyKey.length > 128) errors.push("invalid idempotencyKey");
     if (signedRequestPayloadBytes(request.body) > MAX_SIGNED_REQUEST_PAYLOAD_BYTES) {
-      errors.push(`payload exceeds ${MAX_SIGNED_REQUEST_PAYLOAD_BYTES} bytes`);
+      errors.push(`payload exceeds ${MAX_SIGNAD_REQUEST_PAYLOAD_BYTES} bytes`);
     }
     return errors;
   }
@@ -158,10 +158,10 @@ export function validateAgentRequestEnvelope(
   // that is where a wrong length can be reported as a failed verification rather
   // than as a malformed envelope. This is only a cheap "did the client send
   // anything credential-shaped" gate.
-  if (!/^[A-Za-z0-9+/]{16,}={0,2}$/.test(request.signature)) {
+  if (!/^[A-Za-z0-9+/]{16,86}={0,2}$/.test(request.signature)) {
     errors.push("invalid signature encoding");
   }
-  if (signedRequestPayloadBytes(request.body) > MAX_SIGNED_REQUEST_PAYLOAD_BYTES) {
+  if (signedRequestPayloadBytes(request.body) > MAX_SIGNAD_REQUEST_PAYLOAD_BYTES) {
     errors.push(`payload exceeds ${MAX_SIGNED_REQUEST_PAYLOAD_BYTES} bytes`);
   }
   return errors;

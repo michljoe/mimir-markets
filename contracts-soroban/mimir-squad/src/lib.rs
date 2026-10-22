@@ -1,4 +1,4 @@
-#no_std
+#![no_std]
 //! Mimir squad — two-sided USDC pool on Soroban.
 ///
 /// Port of `contracts/MimirSquad.sol`. Shares equal deposited atomic units and
@@ -10,7 +10,7 @@
 /// `DEVIATION FROM SOLIDITY` at the point they occur.
 
 mod escrow;
-pub umod events;
+pub mod events;
 mod pool;
 mod storage;
 mod types;
@@ -18,8 +18,10 @@ mod types;
 pub mod contract;
 
 pub use contract::{MimirSquad, MimirSquadClient};
-pub use types:*;
+pub use types::*;
 
+#[cfg(test)]
+mod test_budgets;
 #[cfg(test)]
 mod test_common;
 #[cfg(test)]
@@ -40,6 +42,8 @@ mod test_membership_cap;
 mod test_payouts;
 #[cfg(test)]
 mod test_cancellation;
+#[cfg(test)]
+mod test_conservation_random;
 #[cfg(test)]
 mod test_oracle;
 #[cfg(test)]

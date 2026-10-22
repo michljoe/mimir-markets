@@ -20,8 +20,9 @@
  * Env: TRADER_<NAME>_SECRET, GROQ_API_KEY, DATABASE_URL,
  *      NEXT_PUBLIC_STELLAR_MARKET_CONTRACT_ID, NEXT_PUBLIC_STELLAR_RPC_URL
  *      TRADER_POLL_INTERVAL_MS=900000  (poll cadence, default 15m)
+ *      TRADER_POLL_JITTER_MS=90000     (± spread per cycle, default 10%; 0 = fixed)
  *      TRADER_MAX_STAKES_PER_CYCLE=1   (stakes per trader per cycle)
- *      TRADER_DRY_RUN=1                (decide and log, stake nothing)
+ *      TRADER_DRY_RUN=1                (decide and log, stake nothing, spend nothing)
  */
 
 // Groq for the traders regardless of what the rest of the fleet uses: their whole
@@ -50,14 +51,18 @@ import {
   describeBackoffError,
   withBackoff,
 } from "../../lib/ops/backoff-policies";
+import { resolvePollJitterMs } from "../../lib/ops/poll-jitter";
 import { AUTHORITY_LEVELS, defaultLimits, REGISTRY_SCHEMA_VERSION, type AgentRecord } from "../../lib/agents/registry";
 import { loadAgent, saveAgent } from "../../lib/agents/store";
 import { getClaimsByFilter, getChallengersByClaimId } from "../../lib/db";
 import { TRADER_PERSONAS, isTraderVerdict, shouldStake, type TraderPersona, type TraderVerdict } from "./personas";
-import { filterJoinableClaims } from "./policy";
+import { filterJoinableClaims, shouldBuySecondOpinion } from "./policy";
 
 const POLL_INTERVAL_MS = Number(process.env.TRADER_POLL_INTERVAL_MS ?? "900000");
+// ± around each cycle; unset = 10% of the interval, 0 = fixed scheduling.
+const POLL_JITTER_MS = resolvePollJitterMs(POLL_INTERVAL_MS, process.env.TRADER_POLL_JITTER_MS);
 const MAX_STAKES_PER_CYCLE = Number(process.env.TRADER_MAX_STAKES_PER_CYCLE ?? "1");
+const MAX_PAID_READS_PER_CYCLE = Number(process.env.TRADER_MAX_PAID_READS_PER_CYCLE ?? "3");
 const DRY_RUN = process.env.TRADER_DRY_RUN === "1";
 /**
  * Where to buy a second opinion. Agents paying agents is the point of x402 here:
@@ -67,10 +72,25 @@ const DRY_RUN = process.env.TRADER_DRY_RUN === "1";
 const MIMIR_URL = (process.env.MIMIR_URL ?? "").replace(/\/$/, "");
 const BUY_SECOND_OPINION = process.env.TRADER_BUY_ORACLE !== "0";
 
+/** UTC day boundary in ms — exposure limits reset at 00:00 UTC. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 interface Decision {
   verdict: TraderVerdict;
   confidence: number;
   reasoning: string;
+}
+
+/**
+ * Pure counter for paid oracle reads within a single cycle.
+ *
+ * Returns true when another paid read may be bought, false once the configured
+ * cap is reached. A cap of 0 (or any non-positive value) disables paid reads
+ * entirely. Extracted so the budget logic can be unit-tested without a wallet.
+ */
+export function canBuyPaidRead(paidReadsSoFar: number, cap: number): boolean {
+  if (!Number.isFinite(cap) || cap <= 0) return false;
+  return paidReadsSoFar < cap;
 }
 
 function walletFor(persona: TraderPersona): AgentWallet | null {
@@ -115,6 +135,55 @@ async function ensureRegistered(persona: TraderPersona, wallet: AgentWallet): Pr
   await saveAgent(record);
   console.log(`[traders] ${persona.emoji} registered ${persona.agentId} (${wallet.address})`);
   return record;
+}
+
+/**
+ * Sum of `amount` staked by `wallet` on claims whose stake landed within the
+ * current UTC day. Exported for unit tests.
+ *
+ * `stakes` is the flat list of (claimId, challenger) rows the caller has already
+ * gathered; `stakedAtMs` is the challenger's stake timestamp in ms. Rows without
+ * a timestamp are treated as today so an unreadable row errs toward the limit
+ * rather than silently allowing an over-stake.
+ */
+export function sumTodayStake(
+  stakes: Array<{ address: string; amount: number; stakedAtMs?: number }>,
+  wallet: string,
+  nowMs: number = Date.now(),
+): number {
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  let total = 0;
+  for (const s of stakes) {
+    if (s.address !== wallet) continue;
+    const at = s.stakedAtMs ?? nowMs;
+    if (at < dayStart || at >= dayStart + DAY_MS) continue;
+    total += Number(s.amount) || 0;
+  }
+  return total;
+}
+
+/**
+ * Gather every challenger row for `wallet` across the claims it has touched, so
+ * the daily exposure can be computed. Best-effort: a claim whose challengers
+ * cannot be read contributes nothing, which is the same as before this guard.
+ */
+async function gatherWalletStakes(wallet: AgentWallet): Promise<Array<{ address: string; amount: number; stakedAtMs?: number }>> {
+  const rows = await getClaimsByFilter({ states: ["open", "active", "settled"], limit: 200 }).catch(() => []);
+  const out: Array<{ address: string; amount: number; stakedAtMs?: number }> = [];
+  for (const claim of rows) {
+    const challengers = await getChallengersByClaimId(claim.id).catch(() => []);
+    for (const c of challengers) {
+      if (c.address !== wallet.address) continue;
+      const raw = c as unknown as { amount?: number; staked_at?: number; stakedAt?: number };
+      const stakedAtMs = raw.staked_at != null
+        ? Number(raw.staked_at) * 1000
+        : raw.stakedAt != null
+          ? Number(raw.stakedAt)
+          : undefined;
+      out.push({ address: c.address, amount: Number(raw.amount ?? 0), stakedAtMs });
+    }
+  }
+  return out;
 }
 
 function decisionPrompt(persona: TraderPersona, claim: {
@@ -170,8 +239,12 @@ async function buyOracleOpinion(
   wallet: AgentWallet,
   claim: { question: string | null; creator_position: string | null; counter_position: string | null; resolution_url: string | null; settlement_rule: string | null },
 ): Promise<string | null> {
-  if (!BUY_SECOND_OPINION || !MIMIR_URL) return null;
-  if (!claim.question || !claim.resolution_url) return null;
+  if (DRY_RUN) {
+    console.log(`[traders]   DRY_RUN — skipping paid oracle read (${PRICES.oracle} USDC)`);
+    return null;
+  }
+  if (!shouldBuySecondOpinion({ buySecondOpinion: BUY_SECOND_OPINION, mimirUrl: MIMIR_URL, dryRun: DRY_RUN, claim })) return null;
+
   try {
     const { response, payment } = await fetchWithBudget(
       `${MIMIR_URL}/api/oracle`,
@@ -278,14 +351,31 @@ async function runTrader(persona: TraderPersona): Promise<void> {
   const joinable = await joinableFor(wallet);
   if (joinable.length === 0) return void console.log(`[traders]   nothing joinable this cycle`);
 
+  const record = await ensureRegistered(persona, wallet);
+  const todayStaked = sumTodayStake(await gatherWalletStakes(wallet), wallet.address);
+  const maxDaily = record.limits.maxDailyExposureUsdc;
+
   let staked = 0;
+  let paidReads = 0;
   for (const claim of joinable) {
     if (staked >= MAX_STAKES_PER_CYCLE) break;
-    const secondOpinion = await buyOracleOpinion(wallet, claim);
+    let secondOpinion: string | null = null;
+    if (canBuyPaidRead(paidReads, MAX_PAID_READS_PER_CYCLE)) {
+      secondOpinion = await buyOracleOpinion(wallet, claim);
+      if (secondOpinion) paidReads += 1;
+    }
     const decision = await decide(persona, claim, secondOpinion);
     const take = shouldStake(decision.verdict, decision.confidence, persona);
     console.log(`[traders]   #${claim.id} ${decision.verdict} ${decision.confidence}% ${take ? "→ STAKE" : "→ pass"} · ${decision.reasoning.slice(0, 90)}`);
     if (!take) continue;
+    const projected = todayStaked + (staked + 1) * persona.stakeUsdc;
+    if (projected > maxDaily) {
+      console.log(
+        `[traders]   skip #${claim.id}: daily exposure ${todayStaked.toFixed(2)} + ${persona.stakeUsdc} ` +
+          `would exceed maxDailyExposureUsdc ${maxDaily.toFixed(2)} USDC`,
+      );
+      continue;
+    }
     if (DRY_RUN) {
       console.log(`[traders]   DRY_RUN — would stake ${persona.stakeUsdc} USDC on #${claim.id}`);
       staked += 1;
@@ -312,6 +402,7 @@ async function runTrader(persona: TraderPersona): Promise<void> {
       }
     }
   }
+  console.log(`[traders]   cycle summary: ${staked} stake(s), ${paidReads}/${MAX_PAID_READS_PER_CYCLE} paid read(s)`);
 }
 
 async function poll(): Promise<void> {
@@ -333,12 +424,19 @@ async function main(): Promise<void> {
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()}`);
   console.log(`  Traders    : ${TRADER_PERSONAS.map((p) => p.agentId).join(", ")}`);
   console.log(`  Stake      : ${TRADER_PERSONAS[0].stakeUsdc} USDC · max ${MAX_STAKES_PER_CYCLE}/cycle each`);
+  console.log(`  Paid reads : max ${MAX_PAID_READS_PER_CYCLE}/cycle each`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s${DRY_RUN ? " · DRY RUN" : ""}`);
+  console.log(`  Poll jitter: ±${(POLL_JITTER_MS / 1000).toFixed(1)}s`);
   console.log("═══════════════════════════════════════════════\n");
 
   void randomUUID; // reserved for per-cycle correlation ids
   const safePoll = () => reportingPoll("traders", "traders", POLL_INTERVAL_MS / 1000, poll);
-  await runWorkerLoop({ worker: "traders", intervalMs: POLL_INTERVAL_MS, cycle: safePoll });
+  await runWorkerLoop({
+    worker: "traders",
+    intervalMs: POLL_INTERVAL_MS,
+    jitterMs: POLL_JITTER_MS,
+    cycle: safePoll,
+  });
 }
 
 main().catch((err) => {

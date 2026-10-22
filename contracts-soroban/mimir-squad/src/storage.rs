@@ -69,6 +69,9 @@ pub fn set_config(env: &Env, usdc: &Address, oracle: &Address, fee_recipient: &A
 pub fn set_oracle(env: &Env, oracle: &Address) {
     env.storage().instance().set(&DataKey::Oracle, oracle);
 }
+/// How long a queued oracle rotation must wait before it can be executed.
+pub const ORACLE_TIMELOCK_SECONDS: u64 = 86_400;
+
 
 pub fn pending_oracle(env: &Env) -> Option<PendingOracle> {
     env.storage().instance().get(&DataKey::PendingOracle)

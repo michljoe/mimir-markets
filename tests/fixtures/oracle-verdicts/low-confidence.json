@@ -1,0 +1,12 @@
+{
+  "verdict": "true",
+  "confidence": 0.42,
+  "reasoning": "The evidence is suggestive but incomplete; the resolution source is not definitive.",
+  "evidenceHash": "0x7d1c2f4a8b3e5960cfd4e7a8b1d2c3f45e6a7b8c9d0e1f2a3b4c5d6e7f890abc",
+  "evidence": [
+    {
+      "source": "https://example.org/resolution-report",
+      "summary": "Report indicates a likely outcome but lacks a confirmed final statement."
+    }
+  ]
+}

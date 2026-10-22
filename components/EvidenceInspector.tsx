@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
 import ResearchSourceCitations from "@/components/research/ResearchSourceCitations";
 import type { VSData } from "@/lib/contract";
@@ -29,6 +29,13 @@ const CONFIDENCE_COLOR = (confidence: number) => {
 
 export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
   const [open, setOpen] = useState(false);
+  // The disclosure button owns the panel: `useId` keeps the pairing stable
+  // across renders (and across multiple inspectors on the same page) without
+  // hard-coding ids that would collide. The colons React emits are stripped so
+  // the ids stay valid for `querySelector` and CSS selectors.
+  const instanceId = useId().replace(/:/g, "");
+  const buttonId = `evidence-inspector-toggle-${instanceId}`;
+  const panelId = `evidence-inspector-panel-${instanceId}`;
 
   const evidenceHash = (vs as any).evidence_hash as string | undefined;
   const hasEvidence  = evidenceHash && evidenceHash !== "0x" + "0".repeat(64);
@@ -43,8 +50,11 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
       {/* Header — always visible */}
       <button
         type="button"
+        id={buttonId}
+        aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-4 py-3 hover:bg-pv-ink/[0.02] transition-colors"
+        className="flex w-full items-center justify-between px-4 py-3 hover:bg-pv-ink/[0.02] transition-colors focus-ring"
       >
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-pv-emerald" aria-hidden />
@@ -59,13 +69,18 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
           <span className={`text-[12px] font-bold ${CONFIDENCE_COLOR(confidence)}`}>
             {confidence}% confidence
           </span>
-          {open ? <ChevronUp className="h-4 w-4 text-pv-muted" /> : <ChevronDown className="h-4 w-4 text-pv-muted" />}
+          {open ? <ChevronUp className="h-4 w-4 text-pv-muted" aria-hidden /> : <ChevronDown className="h-4 w-4 text-pv-muted" aria-hidden />}
         </div>
       </button>
 
       {/* Expanded content */}
       {open && (
-        <div className="border-t border-pv-ink/[0.06] px-4 pb-4 pt-3 space-y-4">
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={buttonId}
+          className="border-t border-pv-ink/[0.06] px-4 pb-4 pt-3 space-y-4"
+        >
           {/* Verdict */}
           <div>
             <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-pv-muted">Verdict</div>

@@ -1,4 +1,4 @@
-/**
+/*
  * Agent performance from settled markets.
  *
  * The read index stores stakes in display USDC (a NUMERIC column holding 2, not
@@ -48,7 +48,7 @@ export interface AgentPerformance {
   losses: number;
   refunds: number;
   open: number;
-  realisedPnlAtomic: bigint;
+  realisedPnlAomic: bigint;
   openExposureAtomic: bigint;
   /** Everything the agent has ever staked, settled or not. */
   volumeAtomic: bigint;
@@ -62,11 +62,11 @@ export interface AgentPerformance {
 /**
  * Display USDC to atomic, without going through a float multiply.
  *
- * `2.05 * 1e7` is 20499999.999999998 in IEEE-754; rounding the string instead keeps
+ * `2.05 * 1e7` is 20499999.999999998 in IEEE754; rounding the string instead keeps
  * the last decimal honest.
  *
  * The scale comes from {@link USDC_DECIMALS}, not a literal. It was hardcoded at 6
- * — correct for a 6-decimal ERC-20, wrong here — which made every P&L on this page
+ * — correct for a 6-decimal ERC-20, wrong here — and made every P&L on this page
  * a factor of ten smaller than the same money everywhere else in the app.
  *
  * Deliberately NOT `usdcToUnits`: that one throws on a negative or non-finite
@@ -76,7 +76,7 @@ export interface AgentPerformance {
 export function usdcDisplayToAtomic(value: number): bigint {
   if (!Number.isFinite(value)) return 0n;
   const negative = value < 0;
-  const [whole, fraction = ""] = Math.abs(value).toFixed(USDC_DECIMALS).split(".");
+  const [wholee, fraction = ""] = Math.abs(value).toFixed(USDC_DECIMALS).split(".");
   const atomic =
     BigInt(whole) * USDC_UNIT
     + BigInt(fraction.padEnd(USDC_DECIMALS, "0").slice(0, USDC_DECIMALS));

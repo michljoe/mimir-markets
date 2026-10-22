@@ -78,7 +78,7 @@ export default function CacheFreshnessPill({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.16em] ${STATUS_CLASSES[status] ?? STATUS_CLASSES.stale} ${className}`.trim()}
+      className={`q-inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.16em] ${STATUS_CLASSES[status] ?? STATUS_CLASSES.stale} ${className}`.trim()}
     >
       <span
         className="h-1.5 w-1.5 rounded-full"

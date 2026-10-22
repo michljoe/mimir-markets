@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "next build",
-  "installCommand": "npm install",
+  "installCommand": "npm ci",
   "regions": ["iad1"],
   "functions": {
     "app/api/**/route.ts": {
@@ -13,6 +13,18 @@
     {
       "path": "/api/cron/nonce-prune",
       "schedule": "*/20 * * * *"
+    },
+    {
+      "path": "/api/cron/sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/challenge-opportunities",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/proposals/mark-stale",
+      "schedule": "*/30 * * * *"
     }
   ],
   "headers": [

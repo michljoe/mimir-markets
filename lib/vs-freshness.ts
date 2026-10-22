@@ -48,7 +48,18 @@ export function makeContractFreshness(): VSCacheFreshness {
   });
 }
 
-// A warning applies only to indexed reads, never to an on-chain snapshot.
+/**
+ * Maps a freshness snapshot to the warning state surfaced on indexed views.
+ * Returns null when no warning should be shown (non-index or fresh reads).
+ */
+export function mapFreshnessToWarning(
+  freshness: VSCacheFreshness | null,
+  nowMs = Date.now()
+): VSCacheFreshness | null {
+  return isStaleIndexSnapshot(freshness, nowMs) ? freshness : null;
+}
+
+/** A warning applies only to indexed reads, never to an on-chain snapshot. */
 export function isStaleIndexSnapshot(
   freshness: VSCacheFreshness | null,
   nowMs = Date.now()

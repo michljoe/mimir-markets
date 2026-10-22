@@ -26,3 +26,33 @@ test("the cap bounds aggressive edges", () => {
 test("100% confidence bets exactly the cap", () => {
   assert.equal(kellyFraction(100, 0.25), 0.25);
 });
+
+test("returns 0 when netOdds is zero, negative, or not finite", () => {
+  assert.equal(kellyFraction(80, 0.25, 0), 0);
+  assert.equal(kellyFraction(80, 0.25, -1), 0);
+  assert.equal(kellyFraction(80, 0.25, Number.NaN), 0);
+  assert.equal(kellyFraction(80, 0.25, Number.POSITIVE_INFINITY), 0);
+  assert.equal(kellyFraction(80, 0.25, Number.NEGATIVE_INFINITY), 0);
+});
+
+test("returns 0 when cap is zero, negative, or not finite", () => {
+  assert.equal(kellyFraction(80, 0), 0);
+  assert.equal(kellyFraction(80, -0.25), 0);
+  assert.equal(kellyFraction(80, Number.NaN), 0);
+  assert.equal(kellyFraction(80, Number.POSITIVE_INFINITY), 0);
+  assert.equal(kellyFraction(80, Number.NEGATIVE_INFINITY), 0);
+});
+
+test("returns 0 when confidence is not finite", () => {
+  assert.equal(kellyFraction(Number.NaN, 0.25), 0);
+  assert.equal(kellyFraction(Number.POSITIVE_INFINITY, 0.25), 0);
+  assert.equal(kellyFraction(Number.NEGATIVE_INFINITY, 0.25), 0);
+});
+
+test("clamps confidence to 0..100 range", () => {
+  // confidence > 100 clamped to 100% confidence -> bets cap
+  assert.equal(kellyFraction(150, 0.25), 0.25);
+  // confidence < 0 clamped to 0% confidence -> bets 0
+  assert.equal(kellyFraction(-20, 0.25), 0);
+});
+

@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { formatAtomicUsdc } from "@/lib/usdc";
+import { computeCopyUsageFromExecutions, type CopyUsageExecutionRow } from "@/lib/copy-trading";
 import type { CopyPermissionFeedbackView, CopyPermissionStatus } from "@/lib/copy-permission-feedback";
 import { ShieldAlert, ShieldCheck, Clock, AlertTriangle, Unlink, Activity, RefreshCw } from "lucide-react";
 
@@ -19,15 +20,56 @@ const STATUS_THEME: Record<CopyPermissionStatus, { label: string; tone: string; 
 
 export function CopyPermissionCard({
   feedback,
+  executions = [],
   onRevoke,
   isRevoking,
 }: {
   feedback: CopyPermissionFeedbackView;
+  executions?: readonly CopyUsageExecutionRow[];
   onRevoke?: (permissionId: string) => void;
   isRevoking?: boolean;
 }) {
   const theme = STATUS_THEME[feedback.status] ?? STATUS_THEME.invalid;
   const Icon = theme.icon;
+
+  // Resolve timezone only after mount so SSR markup stays stable and the reset
+  // stamps reflect the viewer's zone (mirrors components/LiveDeadline.tsx).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  let usage: ReturnType<typeof computeCopyUsageFromExecutions> | null = null;
+  try {
+    usage = computeCopyUsageFromExecutions(executions);
+  } catch {
+    // A window total beyond display precision: fall back to caps-only rendering.
+  }
+
+  const formatReset = (ms: number) =>
+    mounted ? new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
+
+  const bars = usage && [
+    {
+      key: "daily",
+      label: "Daily",
+      usedAtomic: BigInt(usage.dailyUsedAtomic),
+      capAtomic: feedback.dailyCapAtomic ? BigInt(feedback.dailyCapAtomic) : null,
+      resetAtMs: usage.nextDailyResetAtMs,
+    },
+    {
+      key: "weekly",
+      label: "Weekly",
+      usedAtomic: BigInt(usage.weeklyUsedAtomic),
+      capAtomic: feedback.weeklyCapAtomic ? BigInt(feedback.weeklyCapAtomic) : null,
+      resetAtMs: usage.nextWeeklyResetAtMs,
+    },
+    {
+      key: "open",
+      label: "Open exposure",
+      usedAtomic: BigInt(usage.openExposureAtomic),
+      capAtomic: feedback.totalOpenExposureAtomic ? BigInt(feedback.totalOpenExposureAtomic) : null,
+      resetAtMs: null,
+    },
+  ];
 
   return (
     <section
@@ -97,6 +139,49 @@ export function CopyPermissionCard({
           </div>
         </div>
       </div>
+
+      {bars && bars.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {bars.map((bar) => {
+            const cap = bar.capAtomic;
+            const pct = cap && cap > 0n ? Number((bar.usedAtomic * 100n) / cap) : null;
+            const text = cap !== null
+              ? `${formatAtomicUsdc(bar.usedAtomic)} of ${formatAtomicUsdc(cap)} USDC used`
+              : `${formatAtomicUsdc(bar.usedAtomic)} USDC used`;
+            const resetLabel = bar.resetAtMs !== null ? formatReset(bar.resetAtMs) : "";
+            return (
+              <div key={bar.key}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-pv-muted">{bar.label}</span>
+                  <span className="font-mono text-xs font-semibold tabular-nums text-pv-text">{text}</span>
+                </div>
+                <div
+                  className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pv-ink/[0.08]"
+                  role="progressbar"
+                  aria-label={`${bar.label} copy budget`}
+                  aria-valuetext={text}
+                  aria-valuenow={pct ?? undefined}
+                  aria-valuemin={pct === null ? undefined : 0}
+                  aria-valuemax={pct === null ? undefined : 100}
+                >
+                  <div
+                    className="h-full rounded-full bg-pv-cyan"
+                    style={{ width: pct === null ? "0%" : `${Math.min(pct, 100)}%` }}
+                  />
+                </div>
+                {bar.resetAtMs !== null && resetLabel && (
+                  <time
+                    dateTime={new Date(bar.resetAtMs).toISOString()}
+                    className="mt-0.5 block font-mono text-[10px] tabular-nums text-pv-muted"
+                  >
+                    Resets {resetLabel}
+                  </time>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {onRevoke && feedback.permissionId && !feedback.isRevoked && (
         <div className="mt-4 flex justify-end">

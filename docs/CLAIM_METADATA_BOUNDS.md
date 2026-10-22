@@ -18,7 +18,7 @@ forcing every indexer and agent to re-read it.
 `counter_position`, `resolution_url`, `category`, `market_type`,
 `handicap_line`, `settlement_rule` and the oracle's `resolution_summary`.
 `mimir-squad` applies the same 512-byte cap to the market `question`
-(`MAX_QUESTION_BYTES`).
+(MAX_QUESTION_BYTES`).
 
 Empty fields still fall back to their existing defaults (`custom`, `binary`);
 the fallback bytes are counted as they will be stored, so the budget describes
@@ -97,3 +97,12 @@ cargo test -p mimir-squad
 cargo build -p mimir-market --target wasm32-unknown-unknown --release
 cargo build -p mimir-squad --target wasm32-unknown-unknown --release
 ```
+
+## Oracle endpoint bounds
+
+The paid oracle endpoint `$POST /api/oracle` applies the same metadata
+bounds to its request body before fetching evidence or calling the LLM. The
+helper `validateOracleRequest` in `app/api/oracle/route.ts` rejects any field
+that exceeds `MAX_METADATA_BYTES` (512), and caps `evidenceUrl` at 2 048 bytes.
+An oversized request returns a 400 naming the offending field before any fetch
+or LLM call, so the paywall never settles and the buyer is not charged.

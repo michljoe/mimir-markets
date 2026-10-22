@@ -1,6 +1,6 @@
 # Async panel skeletons
 
-Loading skeletons for dashboard, explorer, council, and market async panels.
+Loading skeletons for dashboard, explorer, council, stats, and market async panels.
 
 ## Behavior (`lib/asyncPanelLoading.ts`)
 
@@ -18,5 +18,5 @@ Money, wallet addresses, prompts, and analytics fields are never rendered inside
 ## Rollout
 
 - `CouncilVoteWidget` and market/VS loading use shared skeletons.
-- Route `app/[locale]/council/loading.tsx` covers SSR council navigation.
-- Dashboard / explorer Suspense fallbacks use `DashboardPanelSkeleton` / `ExplorerPanelSkeleton`.
+- Routes `app/[locale]/council/loading.tsx` and `app/[locale]/stats/loading.tsx` cover SSR council and stats navigation; `app/[locale]/council/page.tsx` wraps slow sub-sections in `Suspense` with skeleton fallbacks.
+- Dashboard / explorer / stats fallbacks use `DashboardPanelSkeleton` / `ExplorerPanelSkeleton` / `StatsPanelSkeleton`.

@@ -8,8 +8,16 @@
  * Callers pick their own safety cap (oracle 0.25, council personas 0.15).
  */
 export function kellyFraction(confidencePct: number, cap: number, netOdds = 1.0): number {
-  const p = confidencePct / 100;
+  if (!Number.isFinite(confidencePct) || !Number.isFinite(cap) || !Number.isFinite(netOdds)) {
+    return 0;
+  }
+  if (cap <= 0 || netOdds <= 0) {
+    return 0;
+  }
+  const clampedConfidence = Math.max(0, Math.min(100, confidencePct));
+  const p = clampedConfidence / 100;
   const q = 1 - p;
   const f = (p * netOdds - q) / netOdds;
   return Math.max(0, Math.min(cap, f));
 }
+

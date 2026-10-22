@@ -11,7 +11,7 @@ The point isn't to find a single "best" trader. It's the opposite: by giving ten
 ## Table of contents
 
 - [Why a council](#why-a-council)
-- [The ten personas](#the-ten-personas)
+- [The council persona roster](#the-council-persona-roster)
 - [Architecture](#architecture)
 - [Decision pipeline](#decision-pipeline)
 - [Self-resolving settlement](#self-resolving-settlement)
@@ -31,22 +31,48 @@ Each persona is, by design, *wrong sometimes*. The Optimist over-weights positiv
 
 ---
 
-## The ten personas
+## The council persona roster
 
-| # | Persona | Archetype | Strategy | Categories |
-|---|---|---|---|---|
-| 1 | 🌞 The Optimist | LLM-biased | Prepends a "lean positive" prompt; +5% confidence on bullish reads. | All |
-| 2 | 🌧️ The Pessimist | LLM-biased | Mirror image — prefers failure/regression reads when balanced. | All |
-| 3 | 🔁 The Contrarian | Rule-based (no LLM) | Stakes the challenger side when creator pool ≥ 60% of total. Reactive, not analytical. | All |
-| 4 | 📊 The Statistician | LLM-biased | High confidence threshold (≥90%); rare bets, larger stake. Abstains on weak evidence. | All |
-| 5 | 🐋 The Whale-Watcher | Rule-based (no LLM) | Reads `getChallengerList`; stakes challenger if the biggest individual is on that side. | All |
-| 6 | ₿ Crypto Maximalist | Specialist | Only touches `crypto`/`defi`/`token` claims. Bullish on adoption stories. | Crypto |
-| 7 | 🏈 Sports Pundit | Specialist | Only `sports`/`soccer`/`nba`/`nfl`/`tennis`/`f1`. Reads form, head-to-head, injuries. | Sports |
-| 8 | 🌤️ The Weatherman | Specialist | Only `weather`/`climate`. Trusts numbers over narratives. | Weather |
-| 9 | 💀 The Doomer | LLM-biased | "Worst case is the base case." +7% confidence on disaster scenarios. | All |
-| 10 | 🗣️ The Yapper | Micro-stakes | Low threshold (60%), tiny stake (0.5 USDC), maximum coverage. | All |
+The council is organized into two jury tracks: the 10 classic personas in `agents/council/personas.ts` and the 10 philosopher personas in `agents/council/philosophers.ts`.
 
-**Two of the ten — Contrarian and Whale-Watcher — never call the LLM.** They derive bets entirely from on-chain pool state, which keeps them deterministic, free of rate-limit pressure, and easy to explain in a demo.
+### Key Derivation & Wallet Environment Naming
+
+Key derivations follow `lib/agent-wallets.ts` via `councilEnvSlug`, `councilSecretEnv`, and `councilPublicEnv`:
+- **Secret seed (`S…`):** `COUNCIL_<SLUG>_SECRET` (worker-only, holds local signing keypair).
+- **Public key (`G…`):** `COUNCIL_<SLUG>_PUBLIC` (web-server safe, used for UI display, routing, and payment verification).
+
+### Council persona roster and wallet environments
+
+| Slug | Display Name | Rule / LLM | Category Filter | Secret Env | Public Env |
+|---|---|---|---|---|---|
+| `optimist` | 🌞 The Optimist | LLM-based | All | `COUNCIL_OPTIMIST_SECRET` | `COUNCIL_OPTIMIST_PUBLIC` |
+| `pessimist` | 🌧️ The Pessimist | LLM-based | All | `COUNCIL_PESSIMIST_SECRET` | `COUNCIL_PESSIMIST_PUBLIC` |
+| `contrarian` | 🔁 The Contrarian | Rule-based | All | `COUNCIL_CONTRARIAN_SECRET` | `COUNCIL_CONTRARIAN_PUBLIC` |
+| `statistician` | 📊 The Statistician | LLM-based | All | `COUNCIL_STATISTICIAN_SECRET` | `COUNCIL_STATISTICIAN_PUBLIC` |
+| `whale-watcher` | 🐋 The Whale-Watcher | Rule-based | All | `COUNCIL_WHALE_WATCHER_SECRET` | `COUNCIL_WHALE_WATCHER_PUBLIC` |
+| `crypto-maxi` | ₿ Crypto Maximalist | LLM-based | crypto, defi, token | `COUNCIL_CRYPTO_MAXI_SECRET` | `COUNCIL_CRYPTO_MAXI_PUBLIC` |
+| `sports-pundit` | 🏈 Sports Pundit | LLM-based | sports, soccer, nba, nfl, tennis, f1 | `COUNCIL_SPORTS_PUNDIT_SECRET` | `COUNCIL_SPORTS_PUNDIT_PUBLIC` |
+| `weatherman` | 🌤️ The Weatherman | LLM-based | weather, climate | `COUNCIL_WEATHERMAN_SECRET` | `COUNCIL_WEATHERMAN_PUBLIC` |
+| `doomer` | 💀 The Doomer | LLM-based | All | `COUNCIL_DOOMER_SECRET` | `COUNCIL_DOOMER_PUBLIC` |
+| `yapper` | 🗣️ The Yapper | LLM-based | All | `COUNCIL_YAPPER_SECRET` | `COUNCIL_YAPPER_PUBLIC` |
+| `socrates` | 🏛️ Socrates | LLM-based | All | `COUNCIL_SOCRATES_SECRET` | `COUNCIL_SOCRATES_PUBLIC` |
+| `ada` | ⚙️ Ada Lovelace | LLM-based | All | `COUNCIL_ADA_SECRET` | `COUNCIL_ADA_PUBLIC` |
+| `feynman` | 🔬 Richard Feynman | LLM-based | All | `COUNCIL_FEYNMAN_SECRET` | `COUNCIL_FEYNMAN_PUBLIC` |
+| `kahneman` | 🧠 Daniel Kahneman | LLM-based | All | `COUNCIL_KAHNEMAN_SECRET` | `COUNCIL_KAHNEMAN_PUBLIC` |
+| `taleb` | 🎲 Nassim Taleb | LLM-based | All | `COUNCIL_TALEB_SECRET` | `COUNCIL_TALEB_PUBLIC` |
+| `munger` | 🔄 Charlie Munger | LLM-based | All | `COUNCIL_MUNGER_SECRET` | `COUNCIL_MUNGER_PUBLIC` |
+| `machiavelli` | 🗝️ Niccolò Machiavelli | LLM-based | All | `COUNCIL_MACHIAVELLI_SECRET` | `COUNCIL_MACHIAVELLI_PUBLIC` |
+| `meadows` | 🔗 Donella Meadows | LLM-based | All | `COUNCIL_MEADOWS_SECRET` | `COUNCIL_MEADOWS_PUBLIC` |
+| `aurelius` | 🛡️ Marcus Aurelius | LLM-based | All | `COUNCIL_AURELIUS_SECRET` | `COUNCIL_AURELIUS_PUBLIC` |
+| `lao-tzu` | ☯️ Lao Tzu | LLM-based | All | `COUNCIL_LAO_TZU_SECRET` | `COUNCIL_LAO_TZU_PUBLIC` |
+
+**Rule-based vs LLM-based personas:**
+- **Rule-based (`contrarian`, `whale-watcher`):** Derive stakes purely from on-chain pool imbalance or top-staker positions. They never call an LLM, keeping them fast, deterministic, and free of API rate limits.
+- **LLM-based:** All other personas (including the entire philosopher jury track) query Gemini with specific persona framing, bias modifiers, or multi-step reasoning rubrics.
+
+### Disabling philosophers (`COUNCIL_PHILOSOPHERS=0`)
+
+By default, the council worker runs both the classic personas and the philosopher jury track. Set `COUNCIL_PHILOSOPHERS=0` in the environment to disable the philosopher track entirely and run only the classic council personas. You can also specify an optional comma-separated list of philosopher slugs via `COUNCIL_PHILOSOPHERS_ACTIVE` to activate only selected philosophers.
 
 ---
 
@@ -88,7 +114,7 @@ flowchart LR
 Three independent runtime tiers:
 
 1. **Worker tier (Railway)** — single Node process boots all ten personas. They poll sequentially within a cycle to keep LLM-call volume bounded.
-2. **Signer tier (local seeds)** — each persona has `COUNCIL_<SLUG>_SECRET` (an `S…` seed). Seeds never leave the worker env. The web server only knows public `COUNCIL_<SLUG>_ADDRESS` (`G…`) values for payment routing and UI.
+2. **Signer tier (local seeds)** — each persona has `COUNCIL_<SLUG>_SECRET` (an `S…` seed). Seeds never leave the worker env. The web server only knows public `COUNCIL_<SLUG>_PUBLIC` (`G…`) values for payment routing and UI.
 3. **Settlement tier (`mimir-market`)** — personas only call `challenge_claim`. Resolution stays exclusively with the oracle keypair (`get_oracle`), and market creation stays with the market-creator (`get_owner`).
 
 ---
@@ -226,7 +252,7 @@ npm run workers
 
 `railway.json` points at `npm run workers`. Add the council env vars below on Railway; the worker starts a third process alongside the oracle and market-creator.
 
-To scale the council down temporarily, leave some `COUNCIL_<SLUG>_PRIVATE_KEY` vars unset — the worker skips any persona missing its key at boot and warns once.
+To scale the council down temporarily, leave some `COUNCIL_<SLUG>_SECRET` vars unset — the worker skips any persona missing its key at boot and warns once.
 
 ---
 
@@ -236,20 +262,14 @@ Wallet pairs are generated by `scripts/create-agent-wallets.ts` and written into
 
 | Variable | Purpose |
 |---|---|
-| `COUNCIL_OPTIMIST_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🌞 Optimist |
-| `COUNCIL_PESSIMIST_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🌧️ Pessimist |
-| `COUNCIL_CONTRARIAN_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🔁 Contrarian |
-| `COUNCIL_STATISTICIAN_PRIVATE_KEY` / `_ADDRESS` | Wallet for 📊 Statistician |
-| `COUNCIL_WHALE_WATCHER_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🐋 Whale-Watcher |
-| `COUNCIL_CRYPTO_MAXI_PRIVATE_KEY` / `_ADDRESS` | Wallet for ₿ Crypto Maximalist |
-| `COUNCIL_SPORTS_PUNDIT_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🏈 Sports Pundit |
-| `COUNCIL_WEATHERMAN_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🌤️ Weatherman |
-| `COUNCIL_DOOMER_PRIVATE_KEY` / `_ADDRESS` | Wallet for 💀 Doomer |
-| `COUNCIL_YAPPER_PRIVATE_KEY` / `_ADDRESS` | Wallet for 🗣️ Yapper |
+| `COUNCIL_<SLUG>_SECRET` / `_PUBLIC` | Secret seed (`S…`) and public key (`G…`) for each persona (see roster table above) |
+| `COUNCIL_PHILOSOPHERS` | Set to `0` to disable philosopher jury track (default: `1`) |
+| `COUNCIL_PHILOSOPHERS_ACTIVE` | Optional CSV subset of philosopher slugs to run |
 | `COUNCIL_POLL_INTERVAL_MS` | Cycle interval in ms (default 180_000). |
 | `COUNCIL_MAX_CLAIMS` | Max claims evaluated per cycle (default 1). |
 | `COUNCIL_DECISION_DELAY_MS` | Min ms between persona decisions/stakes (default 30000). |
 | `COUNCIL_LLM_THROTTLE_MS` | Min ms between LLM calls (default 8000). |
+| `COUNCIL_PASS_TTL_MS` | Council pass lifetime in ms (default `600000`, capped at `86400000`). Malformed values fall back to the default — see `lib/council/pass-ttl.ts`. |
 | `COUNCIL_PEER_READS` | `1` to buy peer reasoning before deciding. |
 | `COUNCIL_PEER_READ_CAP_USDC` | Max accepted HTTP 402 quote per peer read (default `0.003`). |
 | `MARKET_CREATOR_PREFLIGHT` | `1` to force paid council preflight for market creation. |

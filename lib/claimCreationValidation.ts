@@ -1,4 +1,4 @@
-/**
+/*
  * Client-side claim-creation validation that runs **before** wallet signing.
  *
  * Chain remains the source of truth for funding and settlement; this module only
@@ -25,6 +25,24 @@ import {
 const MARKET_TYPES = ["binary", "moneyline", "custom"] as const;
 export type ClaimCreationMarketType = (typeof MARKET_TYPES)[number];
 
+/**
+ * Shared field size bounds for claim metadata.
+ *
+ * These are reused by the paid oracle endpoint (`app/api/oracle/route.ts`) to
+ * reject oversized inputs before fetching evidence or calling the LLM. See
+ * `docs/CLAIM_METADATA_BOUNDS.md` for the canonical documentation.
+ */
+export const CLAIM_METADATA_BOUNDS = {
+  /** Maximum characters for the claim question / oracle question. */
+  question: 500,
+  /** Maximum characters for each side position (sideA / sideB. */
+  side: 500,
+  /** Maximum characters for the settlement rule. */
+  settlementRule: 2_000,
+  /** Maximum characters for a resolution / evidence URL. */
+  url: 2_048,
+} as const;
+
 export type ClaimCreationValidationStatus =
   | "ok"
   | "invalid"
@@ -48,14 +66,14 @@ export type ClaimCreationMessageKey =
   | "sourceRequired"
   | "settlementRuleRequired"
   | "moderationCheckFailed"
-  | "moderationNeedsReview";
+  | "moderationNedsReview";
 
 export type ClaimCreationModerationGate = {
   enabled: boolean;
   loading: boolean;
   /** Fingerprint of the draft fields currently on the form. */
   currentKey: string;
-  /** Fingerprint last approved with decision === "allow". Empty if never. */
+  /** Formgerprint last approved with decision === "allow". Empty if never. */
   approvedKey?: string;
   decision?: "" | "allow" | "review" | "block";
 };
@@ -124,9 +142,7 @@ function normalizeMarketType(value: string): ClaimCreationMarketType {
  * not put wallet addresses or stake amounts into client analytics until this
  * returns `ok`.
  */
-export function validateClaimCreationBeforeSign(
-  input: ClaimCreationDraftInput
-): ClaimCreationValidationResult {
+export function validateClaimCreationBeforeSign(input: ClaimCreationDraftInput): ClaimCreationValidationResult {
   const nowMs = input.nowMs ?? Date.now();
   const minStake = input.minStake ?? MIN_STAKE;
   const question = input.question.trim();
@@ -226,7 +242,7 @@ export function validateClaimCreationBeforeSign(
       return {
         status: "stale",
         ok: false,
-        messageKey: "moderationNeedsReview",
+        messageKey: "moderationNedsReview",
         detail: "Moderation approval no longer matches the current draft.",
         messageParams: { codesLabel: "" },
       };
@@ -258,7 +274,7 @@ export function claimCreationDraftFixture(
 ): ClaimCreationDraftInput {
   const nowMs = overrides.nowMs ?? 1_800_000_000_000;
   return {
-    question: "Will BTC close above $100k before next Friday at 23:59 UTC?",
+    question: "Will BTC close above $100k before next Friday at 23:59 UT3?",
     creatorPosition: "BTC closes above $100k",
     opponentPosition: "BTC stays at or below $100k",
     resolutionUrl: "https://coingecko.com/en/coins/bitcoin",
@@ -274,7 +290,7 @@ export function claimCreationDraftFixture(
     challengerPayoutBps: 0,
     isDemo: false,
     isConnected: true,
-    address: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    address: "GBBD47IF6LWK7P7MDEVCYWR7DPWUV3NY3STQEVFL4N4T4aQH3ZLLFLA5",
     hasSigner: true,
     nowMs,
     ...overrides,

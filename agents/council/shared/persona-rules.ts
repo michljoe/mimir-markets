@@ -1,4 +1,4 @@
-/**
+/*
  * Rule-based persona evaluators — no LLM call, and now no chain call either.
  *
  * The Contrarian and Whale-Watcher don't think; they just react to the
@@ -29,8 +29,8 @@ export function evaluateContrarian(
   const creator   = claim.creatorStake;
   const challenger = claim.totalChallengerStake;
 
-  // Avoid acting when no one has staked the challenger side yet — that's
-  // the market-creator's baseline pool, not "crowd sentiment".
+  // Avoid acting when no one has staked the challenger side yet — that's the
+  // market-creator's baseline pool, not "crowd sentiment".
   if (challenger === 0) {
     return {
       shouldStake: false,
@@ -88,9 +88,9 @@ export function evaluateWhaleWatcher(
   }
 
   // No longer a chain read. `get_claim` returns the challenger roster alongside
-  // the claim, so the runner already holds every individual stake — the EVM
-  // version's extra `getChallengerList` call, and its "failed to read, abstaining"
-  // branch, were a round trip for data already in hand.
+  // the claim, so the runner already holds every individual stake — the EVM version's
+  // extra `getChallengerList` call, and its "failed to read, abstaining" branch,
+  // were a round trip for data already in hand.
   const stakes = claim.challengerStakes;
 
   if (stakes.length === 0) {
@@ -115,7 +115,7 @@ export function evaluateWhaleWatcher(
   return {
     shouldStake: false,
     stakeUsdc:   0,
-    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${claim.creatorStake.toFixed(2)} USDC). I can't join the creator side, so I sit out.`,
+    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${claim.creatorStake.toFixed(2)} USDC vs challengers). I can't join the creator side, so I sit out.`,
     skipReason:  "abstain-agrees-with-creator",
   };
 }

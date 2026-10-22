@@ -1,19 +1,19 @@
-/**
+/*
  * Release migration CLI — reversible up/down without production secrets.
  *
  * Default mode is `--fixture`: an in-memory store that rehearses the full
- * migration chain offline. Pass `--live` only when DATABASE_URL is configured
- * and you intentionally want to talk to Postgres (not implemented as a full
- * driver here — live mode still uses the fixture store and prints a clear
- * notice, keeping money-moving deploys fail-closed until a reviewed adapter
- * lands). This keeps the check reproducible from a clean checkout.
+ * migration chain offline. Pass `--live` to apply migrations to a real Postgres
+ * database configured via DATABASE_URL. Live mode uses the reviewed
+ * PostgresMigrationStore (advisory lock, one transaction per migration,
+ * checksum drift detection). The fixture store remains the default so the
+ * check is reproducible from a clean checkout.
  *
  * Usage:
  *   npm run migrate:status
  *   npm run migrate:up
  *   npm run migrate:down
  *   npm run migrate:verify
- *   npx tsx scripts/migrate.ts status|up|down|verify [--fixture] [--force-destructive] [--steps N]
+ *   npx tsx scripts/migrate.ts status|up|down|verify [--fixture] [--live] [--force-destructive] [--steps N]
  *
  * Exit codes:
  *   0 — success / checksums ok
@@ -22,6 +22,7 @@
 
 import {
   MemoryMigrationStore,
+  PostgresMigrationStore,
   getStatus,
   migrateDown,
   migrateUp,
@@ -52,111 +53,121 @@ function parseArgs(argv: string[]) {
   };
 }
 
-function createStore(fixture: boolean): MigrationStore {
-  // Live Postgres adapter is intentionally not wired yet: release rehearsals
-  // must not require production secrets. Operators apply schema via the
-  // existing ensureSchema path in lib/db.ts; this CLI proves reversibility.
-  if (!fixture) {
-    console.error(
-      "migrate: --live requested but no reviewed Postgres adapter is enabled; using fixture store (fail-closed, no secrets used).",
+async function createStore(opts: {
+  fixture: boolean;
+  live: boolean;
+}): Promise<MigrationStore> {
+  if (opts.fixture) {
+    return new MemoryMigrationStore();
+  }
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error(
+      "--live requires DATABASE_URL to be set; refusing to fall back to the fixture store.",
     );
   }
-  return new MemoryMigrationStore();
+
+  return PostgresMigrationStore.connect(databaseUrl);
 }
 
 async function main(): Promise<number> {
   const opts = parseArgs(process.argv.slice(2));
-  const store = createStore(opts.fixture);
+  const store = await createStore(opts);
 
-  if (opts.command === "status" || opts.command === "verify") {
-    const status = await getStatus(store);
-    if (!opts.quiet) {
-      console.log("Release migration status");
-      console.log(`  head: ${status.headVersion ?? "none"}`);
-      console.log(`  pending: ${status.pendingVersions.join(", ") || "none"}`);
-      console.log(`  checksumsOk: ${status.checksumsOk}`);
-      for (const row of status.registered) {
-        const flag = row.applied ? "applied" : "pending";
-        const irr = row.irreversible ? " irreversible" : "";
-        console.log(
-          `  - v${row.version} ${row.id} [${flag}${irr}] ${row.description}`,
-        );
-      }
-      if (status.issues.length > 0) {
-        console.log("  issues:");
-        for (const issue of status.issues) console.log(`    * ${issue}`);
-      }
-    }
-    if (opts.command === "verify") {
-      // Verify means: registry is well-formed and a full up→down(reversible)→up cycle works.
-      const up = await migrateUp(store, { failFast: true });
-      if (!up.ok) {
-        console.error(up.summary);
-        return 1;
-      }
-      // Revert only the reversible head (v3); leave irreversible baselines blocked.
-      const down = await migrateDown(store, {
-        steps: 1,
-        failFast: true,
-        forceDestructive: false,
-      });
-      if (!down.ok) {
-        console.error(down.summary);
-        for (const s of down.steps) {
-          if (s.error) console.error(`  ${s.migrationId}: ${s.error}`);
-        }
-        return 1;
-      }
-      const upAgain = await migrateUp(store, { failFast: true });
-      if (!upAgain.ok) {
-        console.error(upAgain.summary);
-        return 1;
-      }
+  try {
+    if (opts.command === "status" || opts.command === "verify") {
+      const status = await getStatus(store);
       if (!opts.quiet) {
-        console.log(up.summary);
-        console.log(down.summary);
-        console.log(upAgain.summary);
-        console.log("verify: reversible release migration cycle passed");
+        console.log("Release migration status");
+        console.log(`  head: ${status.headVersion ?? "none"}`);
+        console.log(`  pending: ${status.pendingVersions.join(", ") || "none"}`);
+        console.log(`  checksumsOk: ${status.checksumsOk}`);
+        for (const row of status.registered) {
+          const flag = row.applied ? "applied" : "pending";
+          const irr = row.irreversible ? " irreversible" : "";
+          console.log(
+            `  - v${row.version} ${row.id} [${flag}${irr}] ${row.description}`,
+          );
+        }
+        if (status.issues.length > 0) {
+          console.log("  issues:");
+          for (const issue of status.issues) console.log(`    * ${issue}`);
+        }
+      }
+      if (opts.command === "verify") {
+        // Verify means: registry is well-formed and a full up→down(reversible)→up cycle works.
+        const up = await migrateUp(store, { failFast: true });
+        if (!up.ok) {
+          console.error(up.summary);
+          return 1;
+        }
+        // Revert only the reversible head (v3); leave irreversible baselines blocked.
+        const down = await migrateDown(store, {
+          steps: 1,
+          failFast: true,
+          forceDestructive: false,
+        });
+        if (!down.ok) {
+          console.error(down.summary);
+          for (const s of down.steps) {
+            if (s.error) console.error(`  ${s.migrationId}: ${s.error}`);
+          }
+          return 1;
+        }
+        const upAgain = await migrateUp(store, { failFast: true });
+        if (!upAgain.ok) {
+          console.error(upAgain.summary);
+          return 1;
+        }
+        if (!opts.quiet) {
+          console.log(up.summary);
+          console.log(down.summary);
+          console.log(upAgain.summary);
+          console.log("verify: reversible release migration cycle passed");
+        }
+        return status.issues.length === 0 ? 0 : 1;
       }
       return status.issues.length === 0 ? 0 : 1;
     }
-    return status.issues.length === 0 ? 0 : 1;
-  }
 
-  if (opts.command === "up") {
-    const result = await migrateUp(store, { failFast: true });
-    if (!opts.quiet) {
-      for (const step of result.steps) {
-        console.log(
-          `  ${step.status} up v${step.version} ${step.migrationId}${step.error ? ` — ${step.error}` : ""}`,
-        );
+    if (opts.command === "up") {
+      const result = await migrateUp(store, { failFast: true });
+      if (!opts.quiet) {
+        for (const step of result.steps) {
+          console.log(
+            `  ${step.status} up v${step.version} ${step.migrationId}${step.error ? ` — ${step.error}` : ""}`,
+          );
+        }
+        console.log(result.summary);
       }
-      console.log(result.summary);
+      return result.ok ? 0 : 1;
     }
-    return result.ok ? 0 : 1;
-  }
 
-  if (opts.command === "down") {
-    const result = await migrateDown(store, {
-      steps: opts.steps,
-      failFast: true,
-      forceDestructive: opts.forceDestructive,
-    });
-    if (!opts.quiet) {
-      for (const step of result.steps) {
-        console.log(
-          `  ${step.status} down v${step.version} ${step.migrationId}${step.error ? ` — ${step.error}` : ""}`,
-        );
+    if (opts.command === "down") {
+      const result = await migrateDown(store, {
+        steps: opts.steps,
+        failFast: true,
+        forceDestructive: opts.forceDestructive,
+      });
+      if (!opts.quiet) {
+        for (const step of result.steps) {
+          console.log(
+            `  ${step.status} down v${step.version} ${step.migrationId}${step.error ? ` — ${step.error}` : ""}`,
+          );
+        }
+        console.log(result.summary);
       }
-      console.log(result.summary);
+      return result.ok ? 0 : 1;
     }
-    return result.ok ? 0 : 1;
-  }
 
-  console.error(
-    `Unknown command "${opts.command}". Use status|up|down|verify.`,
-  );
-  return 1;
+    console.error(
+      `Unknown command "${opts.command}". Use status|up|down|verify.`,
+    );
+    return 1;
+  } finally {
+    await store.close();
+  }
 }
 
 main()

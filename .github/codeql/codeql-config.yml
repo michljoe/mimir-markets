@@ -1,0 +1,15 @@
+# CodeQL scans the TypeScript/JavaScript product code. Two trees are excluded:
+#
+#  - tests/fixtures/**        captured inputs and intentionally hostile fixtures
+#                            (SSRF payloads, malformed envelopes) — scanning them
+#                            reports findings that are the test data itself.
+#  - sdk/contracts/**         bindings generated from the Soroban contracts by
+#                            `npm run stellar:bindings`; regenerate, do not edit.
+#
+# Keep this file in sync with .github/workflows/codeql.yml, which passes it to
+# the init action.
+name: "Mimir CodeQL configuration"
+
+paths-ignore:
+  - tests/fixtures/**
+  - sdk/contracts/**

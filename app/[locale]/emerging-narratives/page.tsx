@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
+import { computeEmergingNarratives } from "@/lib/emerging-narratives";
+import { buildVSCacheFreshness } from "@/lib/vs-freshness";
+import { getAllVSFastSnapshot, VS_REVALIDATE_SECONDS } from "@/lib/server/vs-cache";
 import EmergingNarrativesClient from "./EmergingNarrativesClient";
+
+export const dynamic = "force-dynamic";
 
 type EmergingNarrativesPageProps = {
   params: Promise<{ locale: string }>;
@@ -26,7 +31,21 @@ export async function generateMetadata({
   };
 }
 
-export default function EmergingNarrativesPage() {
-  return <EmergingNarrativesClient />;
+export default async function EmergingNarrativesPage() {
+  try {
+    const snapshot = await getAllVSFastSnapshot();
+    return (
+      <EmergingNarrativesClient
+        narratives={computeEmergingNarratives(snapshot.items)}
+        freshness={buildVSCacheFreshness({
+          updatedAtMs: snapshot.syncedAt,
+          freshnessWindowMs: VS_REVALIDATE_SECONDS * 1000,
+          source: "index",
+        })}
+      />
+    );
+  } catch {
+    return <EmergingNarrativesClient error />;
+  }
 }
 

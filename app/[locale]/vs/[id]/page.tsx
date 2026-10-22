@@ -117,20 +117,14 @@ import {
 } from "lucide-react";
 
 /**
- * Direcciones ficticias para previsualizar fases accepted / verifying / proven en
- * VS de muestra (sin blockchain).
+ * Design-preview fixtures live in `lib/design-preview/vs.ts` and are loaded
+ * lazily so they never ship in the normal page bundle.
  *
- * Real, checksum-valid `G…` strkeys rather than the repeated-nibble EVM addresses
- * they replace: the header, the challenger roster and the explorer links all run
- * these through `isAccountAddress` / `getExplorerAddressUrl`, so a stand-in that
- * is not a valid strkey renders the sample market as broken.
+ * To enable the preview, open a sample market (negative id, e.g. `/vs/-1`) and
+ * use the lifecycle controls rendered by the sample-mode card. The builders are
+ * only imported when `isSampleVS` is true.
  */
-const DESIGN_PREVIEW_OPPONENT =
-  "GARCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCFRVX";
-const DESIGN_PREVIEW_CHALLENGER_2 =
-  "GAZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTHCM6";
-const DESIGN_PREVIEW_CHALLENGER_3 =
-  "GBCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIZCA";
+type DesignPreviewModule = typeof import("@/lib/design-preview/vs");
 
 /** Misma silueta que la píldora «{addr} challenges you» (fucsia, pill redondeada). */
 const DUEL_STATUS_FUCHSIA_PILL_CLASS =
@@ -140,248 +134,6 @@ const RIVALRY_ITEM_BASE_CLASS =
   "rounded-xl border p-4 transition-[border-color,background-color] duration-200 bg-pv-bg/30 hover:border-pv-ink/[0.22] hover:bg-pv-bg/35";
 const RIVALRY_ITEM_ACTIVE_CLASS =
   "border-pv-emerald/[0.35] bg-pv-emerald/[0.08] hover:border-pv-emerald/[0.45] hover:bg-pv-emerald/[0.12]";
-
-/** Demo ticket `-4` (1v1): preview alineado con XMTP y métrica SLOTS 1/1. */
-function isDesignPreviewOneVsOneBase(base: VSData): boolean {
-  return (
-    base.id === MOCK_CREATED_VS_ID && getVSConfiguredMaxChallengers(base) === 1
-  );
-}
-
-function buildDesignPreviewVs(
-  base: VSData,
-  step: number,
-  resolutionSummary: string,
-  resolvedOutcome: "creator" | "challengers" = "creator",
-): VSData {
-  const oneV1 = isDesignPreviewOneVsOneBase(base);
-
-  if (step <= 0) {
-    return {
-      ...base,
-      state: "open",
-      opponent: ZERO_ADDRESS,
-      winner: ZERO_ADDRESS,
-      resolution_summary: "",
-      winner_side: undefined,
-      challenger_count: 0,
-      challengers: undefined,
-      challenger_addresses: undefined,
-    };
-  }
-  if (step <= 2) {
-    const pot = getVSTotalPot({
-      ...base,
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      state: "accepted",
-    });
-    if (oneV1) {
-      return {
-        ...base,
-        state: "accepted",
-        opponent: DESIGN_PREVIEW_OPPONENT,
-        winner: ZERO_ADDRESS,
-        resolution_summary: "",
-        winner_side: undefined,
-        challenger_count: 1,
-        challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-        challengers: [
-          {
-            address: DESIGN_PREVIEW_OPPONENT,
-            stake: base.stake_amount,
-            potential_payout: pot,
-          },
-        ],
-      };
-    }
-    return {
-      ...base,
-      state: "accepted",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: ZERO_ADDRESS,
-      resolution_summary: "",
-      winner_side: undefined,
-      challenger_count: 3,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT, DESIGN_PREVIEW_CHALLENGER_2, DESIGN_PREVIEW_CHALLENGER_3],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-        {
-          address: DESIGN_PREVIEW_CHALLENGER_2,
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-        {
-          address: DESIGN_PREVIEW_CHALLENGER_3,
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-      ],
-    };
-  }
-  if (step === 3) {
-    const resolvedPot = getVSTotalPot({
-      ...base,
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      state: "resolved",
-    });
-
-    if (resolvedOutcome === "creator") {
-      return {
-        ...base,
-        state: "resolved",
-        opponent: DESIGN_PREVIEW_OPPONENT,
-        winner: base.creator,
-        winner_side: "creator",
-        resolution_summary: resolutionSummary,
-        challenger_count: 1,
-        challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-        challengers: [
-          {
-            address: DESIGN_PREVIEW_OPPONENT,
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-          {
-            address: DESIGN_PREVIEW_CHALLENGER_2,
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-          {
-            address: DESIGN_PREVIEW_CHALLENGER_3,
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-        ],
-      };
-    }
-
-    return {
-      ...base,
-      state: "resolved",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: DESIGN_PREVIEW_OPPONENT,
-      winner_side: "challengers",
-      resolution_summary: resolutionSummary,
-      challenger_count: 1,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: resolvedPot,
-        },
-      ],
-    };
-  }
-
-  // step >= 4 => CANCELLED (solo para modo demo/testing)
-  const cancelledPot = getVSTotalPot({
-    ...base,
-    opponent: DESIGN_PREVIEW_OPPONENT,
-    state: "cancelled",
-  });
-
-  if (oneV1) {
-    return {
-      ...base,
-      state: "cancelled",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: ZERO_ADDRESS,
-      winner_side: undefined,
-      resolution_summary: "",
-      challenger_count: 1,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: cancelledPot,
-        },
-      ],
-    };
-  }
-
-  return {
-    ...base,
-    state: "cancelled",
-    opponent: DESIGN_PREVIEW_OPPONENT,
-    winner: ZERO_ADDRESS,
-    winner_side: undefined,
-    resolution_summary: "",
-    challenger_count: 1,
-    challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-    challengers: [
-      {
-        address: DESIGN_PREVIEW_OPPONENT,
-        stake: base.stake_amount,
-        potential_payout: cancelledPot,
-      },
-    ],
-  };
-}
-
-function buildDesignPreviewRematchChain(
-  base: VSData,
-  firstRoundOutcome: "creator" | "challengers",
-  resolutionSummary: string,
-): VSData[] {
-  // Dos rondas mock para que se vea "Rematch" en el card sin depender de on-chain.
-  const isGpt5Vs =
-    base.question.startsWith("GPT-5 Announced by OpenAI before ");
-
-  const round1BaseQuestion = isGpt5Vs
-    ? base.question.replace(/before\s+[A-Za-z]+\b.*/i, "before February")
-    : base.question.includes("March")
-      ? base.question.replace("March", "January")
-      : base.question;
-
-  const round2BaseQuestion = isGpt5Vs
-    ? base.question.replace(/before\s+[A-Za-z]+\b.*/i, "before June")
-    : base.question;
-
-  const round1Base: VSData = {
-    ...base,
-    id: base.id - 100,
-    question: round1BaseQuestion,
-    creator_position: isGpt5Vs
-      ? "OpenAI announces GPT-5 before February"
-      : base.creator_position,
-    opponent_position: isGpt5Vs
-      ? "No official announcement before February"
-      : base.opponent_position,
-    resolution_summary: resolutionSummary,
-  };
-
-  const round2Base: VSData = {
-    ...base,
-    id: base.id - 101,
-    question: round2BaseQuestion,
-    creator_position: isGpt5Vs ? "OpenAI announces GPT-5 before June" : base.creator_position,
-    opponent_position: isGpt5Vs ? "No official announcement before June" : base.opponent_position,
-    resolution_summary: resolutionSummary,
-  };
-
-  const round2Outcome: "creator" | "challengers" =
-    firstRoundOutcome === "creator" ? "challengers" : "creator";
-
-  // ROUND 3: no llega a PROVEN todavía (se mantiene en "accepted").
-  const round3Base: VSData = {
-    ...base,
-    id: base.id - 102,
-    question: "BTC Price will break $100k before August 31",
-    resolution_summary: resolutionSummary,
-  };
-
-  return [
-    buildDesignPreviewVs(round1Base, 3, resolutionSummary, firstRoundOutcome),
-    buildDesignPreviewVs(round2Base, 3, resolutionSummary, round2Outcome),
-    buildDesignPreviewVs(round3Base, 2, resolutionSummary, "creator"),
-  ];
-}
 
 type ProgressBarProps = {
   canonicalState: string;
@@ -806,6 +558,7 @@ export default function VSDetailPage() {
   /** Solo VS de muestra (ids negativos): índice 0–4 para previsualizar diseño sin blockchain. */
   const [designLifecycleStep, setDesignLifecycleStep] = useState<number | null>(null);
   const [designResolvedOutcome, setDesignResolvedOutcome] = useState<"creator" | "challengers">("creator");
+  const [designPreview, setDesignPreview] = useState<DesignPreviewModule | null>(null);
   /** Tracks whether a resolve tx was fired so we can reveal the verdict once the state arrives. */
   const pendingResolveRef = useRef(false);
   const attemptedFinalizeResolveTxRef = useRef<string | null>(null);
@@ -823,18 +576,37 @@ export default function VSDetailPage() {
     setHasAttemptedResolve(false);
   }, [vsId]);
 
+  // Load the design-preview builders only when a sample market is open, so the
+  // fixtures stay out of the production chunk for every real market.
+  useEffect(() => {
+    if (!isSampleVS) {
+      setDesignPreview(null);
+      return;
+    }
+    let cancelled = false;
+    import("@/lib/design-preview/vs").then((mod) => {
+      if (!cancelled) setDesignPreview(mod);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSampleVS]);
+
   const displayVs = useMemo(() => {
     if (!vs) return null;
     if (!isSampleVS || designLifecycleStep === null) {
       return vs;
     }
-    return buildDesignPreviewVs(
+    if (!designPreview) {
+      return vs;
+    }
+    return designPreview.buildDesignPreviewVs(
       vs,
       designLifecycleStep,
       t("designPreviewResolutionSummary"),
       designResolvedOutcome,
     );
-  }, [vs, isSampleVS, designLifecycleStep, t, designResolvedOutcome]);
+  }, [vs, isSampleVS, designLifecycleStep, t, designResolvedOutcome, designPreview]);
 
   useEffect(() => {
     if (isSampleVS) {
@@ -1022,9 +794,13 @@ export default function VSDetailPage() {
       return;
     }
 
+    if (!designPreview) {
+      return;
+    }
+
     setRivalryLoading(false);
     setRivalryChain(
-      buildDesignPreviewRematchChain(
+      designPreview.buildDesignPreviewRematchChain(
         vs,
         designResolvedOutcome,
         t("designPreviewResolutionSummary"),
@@ -1037,6 +813,7 @@ export default function VSDetailPage() {
     designLifecycleStep,
     designResolvedOutcome,
     t,
+    designPreview,
   ]);
 
   if (loading) {

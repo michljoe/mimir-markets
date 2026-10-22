@@ -27,11 +27,15 @@ import {
   confidencePercent,
   type FeedItem,
 } from "@/lib/reasoning/feed-view";
+import { agentOptions, type AgentNames } from "@/lib/reasoning/agent-label";
 import ResearchSourceCitations from "@/components/research/ResearchSourceCitations";
 
 const REFRESH_MS = 30_000;
 
-export default function ReasoningFeed({ claimId }: { claimId: number }) {
+export default function ReasoningFeed({
+  claimId,
+  agentNames,
+}: { claimId: number; agentNames?: AgentNames }) {
   const t = useTranslations("reasoningFeed");
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -73,6 +77,13 @@ export default function ReasoningFeed({ claimId }: { claimId: number }) {
     [items, agentId, track],
   );
 
+  // Filter options show display names, keep ids as values, and are sorted by
+  // name so the control is stable and predictable.
+  const agentList = useMemo(
+    () => agentOptions(view.agents, agentNames ?? new Map()),
+    [view.agents, agentNames],
+  );
+
   // Nothing to show and nothing to explain: render nothing rather than an empty
   // card on every market that no agent has looked at yet.
   if (!loaded || items.length === 0) return null;
@@ -96,9 +107,9 @@ export default function ReasoningFeed({ claimId }: { claimId: number }) {
               className="rounded-lg border border-pv-ink/[0.12] bg-pv-bg/60 px-2 py-1 text-xs text-pv-text"
             >
               <option value="">{t("allAgents")}</option>
-              {view.agents.map((id) => (
+              {agentList.map(({ id, label }) => (
                 <option key={id} value={id}>
-                  {id}
+                  {label}
                 </option>
               ))}
             </select>

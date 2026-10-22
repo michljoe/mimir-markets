@@ -93,6 +93,14 @@ jobs:
       - run: npm run check:terms
       - run: npm run check:toolchains
       - run: npm run check:schema-snapshot
+      # Locale completeness and driver parity guards: run once, not per tier.
+      # `--strict` (check:locales:strict) is the CI-grade variant referenced by
+      # docs/LOCALIZATION.md; check:driver-parity pins the path lists against
+      # lib/ci/path-scope.ts (see scripts/ci/changed-paths.mjs).
+      - if: matrix.tier == 'app'
+        run: npm run check:locales:strict
+      - if: matrix.tier == 'app'
+        run: npm run check:driver-parity
       - run: npm run typecheck
       # The published agent API contract must be what the live code serves. Fails
       # if docs/openapi-agent-v1.yaml or schemas/agent-api-v1.schema.json drift;
@@ -169,6 +177,22 @@ jobs:
         run: npm ci
       - if: matrix.name == 'release'
         run: npm run verify:artifacts -- --require-built
+      # Bindings drift guard: regenerate sdk/contracts/* from the freshly built
+      # wasm with the pinned stellar-cli and fail if the committed bindings
+      # differ. A contract signature change without regenerated bindings fails
+      # here instead of at runtime as a simulation error. Offline: no network,
+      # no secrets. See docs/CONTRACT_TOOLCHAINS.md for the regenerate command.
+      - if: matrix.name == 'release'
+        name: check generated contract bindings are up to date
+        run: |
+          set -euo pipefail
+          npx --yes @stellar/stellar-cli@22.8.1 contract bindings typescript \
+            --wasm contracts-soroban/target/wasm32v1-none/release/mimir_market.wasm \
+            --output-dir sdk/contracts/mimir-market --overwrite
+          npx --yes @stellar/stellar-cli@22.8.1 contract bindings typescript \
+            --wasm contracts-soroban/target/wasm32v1-none/release/mimir_squad.wasm \
+            --output-dir sdk/contracts/mimir-squad --overwrite
+          git diff --exit-code sdk/contracts
       # Only the release build is what `npm run deploy:contract` would ship; keep
       # it so a reviewer can compare hashes without building locally.
       - if: matrix.name == 'release'

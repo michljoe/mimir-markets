@@ -1,6 +1,6 @@
 /// Typed contract events, mirroring the `event` declarations in MimirSquad.sol.
 
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk:{contractevent, Address, String};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -147,6 +147,8 @@ pub struct PayoutParked {
     pub amount: i128,
 }
 
+/// An oracle rotation was queued by the current oracle.
+/// The rotation becomes executable at `executable_at`.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleQueued {
@@ -155,6 +157,7 @@ pub struct OracleQueued {
     pub executable_at: u64,
 }
 
+/// A queued oracle rotation was executed after the timelock elapsed.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleChanged {
@@ -163,6 +166,7 @@ pub struct OracleChanged {
     pub previous: Address,
 }
 
+/// A queued oracle rotation was cancelled by the current oracle.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleCancelled {

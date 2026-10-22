@@ -39,7 +39,7 @@ function payingWalletForPersona(persona: PersonaSpec): PayingWallet | null {
   }
 }
 
-function selectPeerSellers(
+export function selectPeerSellers(
   buyer: PersonaSpec,
   activePersonas: PersonaSpec[],
   claimId: number,

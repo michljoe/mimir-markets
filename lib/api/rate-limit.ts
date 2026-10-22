@@ -163,7 +163,7 @@ export const inMemoryStore: RateLimitStore = new InMemoryStore();
 
 /** Test seam: swap the active store (pass undefined to restore the default). */
 export function setRateLimitStore(store?: RateLimitStore): void {
-  activeStore = store ?? inmemoryStore;
+  activeStore = store ?? inMemoryStore;
   activeStoreIsExplicit = store !== undefined;
 }
 
@@ -278,7 +278,7 @@ export async function peek(
       used: bucket?.count ?? 0,
       limit: rule.limit,
       resetsInSeconds: bucket
-        ? Math.max(0, Math.ceil((bucket.windowStarted + rule.windowMs - now) / 1000))
+        ? Math.max(0, Math.ceil((bucket.windowStartedAt + rule.windowMs - now) / 1000))
         : Math.ceil(rule.windowMs / 1000),
     };
   }

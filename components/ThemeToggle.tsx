@@ -10,10 +10,13 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  THEME_STORAGE_KEY,
+  Theme,
+  handleThemeStorageEvent,
+} from "@/lib/theme";
 
-export const THEME_STORAGE_KEY = "mimir-theme";
-
-type Theme = "light" | "dark";
+export { THEME_STORAGE_KEY };
 
 function currentTheme(): Theme {
   return document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -24,7 +27,20 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   // guessed initial value would hydrate-mismatch against the inline script.
   const [theme, setTheme] = useState<Theme | null>(null);
 
-  useEffect(() => setTheme(currentTheme()), []);
+  useEffect(() => {
+    setTheme(currentTheme());
+
+    const onStorage = (event: StorageEvent) => {
+      handleThemeStorageEvent(event, (nextTheme) => {
+        setTheme(nextTheme);
+      });
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   function toggle() {
     const next: Theme = currentTheme() === "light" ? "dark" : "light";

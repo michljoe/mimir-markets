@@ -10,6 +10,11 @@ use crate::types::{
     RematchStatus, Verdict,
 };
 
+/// Maximum number of addresses accepted by [`get_withdrawable_batch`].
+///
+/// Keeps the ledger-entry footprint of a single read bounded.
+pub const MAX_BATCH_SIZE: u32 = 50;
+
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -320,6 +325,28 @@ pub fn add_withdrawable(env: &Env, who: &Address, delta: i128) {
 
 pub fn clear_withdrawable(env: &Env, who: &Address) {
     set_address_i128(env, DataKey::Withdrawable(who.clone()), 0);
+}
+
+/// Batched read of withdrawable balances keyed by an address list.
+///
+/// Returns one entry per input address, in the same order as `addrs`.
+/// Addresses with no parked balance (or never seen) return `0`.
+///
+/// Rejects inputs longer than [`MAX_BATCH_SIZE`] with [`Error::BatchTooLarge`]
+/// *before* touching storage, so an over-sized call costs no ledger reads.
+///
+/// Sits next to `get_claims_batch` as the operator-facing batch primitive for
+/// finding parked payouts without replaying `WithdrawalPending` events.
+pub fn get_withdrawable_batch(env: &Env, addrs: Vec<Address>) -> Result<Vec<i128>, Error> {
+    if addrs.len() > MAX_BATCH_SIZE {
+        return Err(Error::BatchTooLarge);
+    }
+
+    let mut out = Vec::new(env);
+    for who in addrs.iter() {
+        out.push_back(withdrawable(env, &who));
+    }
+    Ok(out)
 }
 
 pub fn accrued_fees(env: &Env, who: &Address) -> i128 {

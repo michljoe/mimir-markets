@@ -46,7 +46,9 @@ export function CopyExecutionHistory({
           {executions.map((item) => {
             const displayReason =
               item.skipReason && item.skipReason in SKIP_REASONS
-                ? SKIP_REASONS[item.skipReason as keyof typeof SKIP_REASONS]
+                ? SKIP_REASONS[
+                    item.skipReason as keyof typeof SKIP_REASONS
+                  ]
                 : item.skipReason
                   ? item.skipReason.replace(/_/g, " ")
                   : undefined;

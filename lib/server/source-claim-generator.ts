@@ -353,6 +353,20 @@ function isClaimDraftCategory(value: unknown): value is ClaimDraftCategory {
   return typeof value === "string" && (CLAIM_DRAFT_CATEGORY_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * Sanitizes and validates draft candidates returned by the model generator.
+ *
+ * Enforces contract safety requirements:
+ * - Drops candidates with malformed shapes, equal sides, or stale deadlines
+ * - Rejects short-window relative movements ('rise by X', 'change by Y from now')
+ * - Clamps confidence scores to valid 0-100 ranges and deduplicates claims
+ * - Limits candidate count to CLAIM_DRAFT_MAX_CANDIDATES
+ *
+ * @param args.sourceUrl - The primary source URL from which the claims were generated
+ * @param args.sourceType - Categorization of the source (media, official, other)
+ * @param args.payload - Raw payload returned by Gemini draft generation
+ * @param args.now - Optional timestamp for deterministic deadline comparisons
+ */
 export function sanitizeGeneratedDrafts(args: {
   sourceUrl: string;
   sourceType: ClaimDraftSourceType;
@@ -469,6 +483,16 @@ export function sanitizeGeneratedDrafts(args: {
   };
 }
 
+/**
+ * Generates structured, challenge-ready claim drafts from a provided URL.
+ *
+ * Fetches an evidence snapshot of the source URL, validates that the source
+ * is permitted, and queries Gemini to extract verifiable future claims.
+ *
+ * @param request.sourceUrl - The target website or article URL
+ * @param request.locale - Language requested for the generated claim drafts ('en' | 'es')
+ * @returns Sanitized source draft response containing candidate claims and source metadata
+ */
 export async function generateClaimDrafts({
   sourceUrl,
   locale = "en",

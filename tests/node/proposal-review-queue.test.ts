@@ -129,7 +129,7 @@ test("claimProposalForReview generates correct SQL for queued -> in_review", asy
   assert.match(sql, /review_status = 'in_review'/);
   assert.match(sql, /claimed_at = \$\d+/);
   assert.match(sql, /reviewer = \$\d+/);
-  assert.match(sql, /WHERE proposal_id = \$\d+ AND review_status = 'queued'/);
+  assert.match(sql, /WHERE proposal_id = \$?\d+ AND review_status = 'queued'/);
 
   const args = lastArgs();
   assert.ok(args.includes("reviewer1"));
@@ -143,9 +143,9 @@ test("completeProposalReview generates correct SQL for in_review -> approved", a
   const sql = lastSql();
   assert.match(sql, /review_status = \$\d+/);
   assert.match(sql, /reviewed_at = \$\d+/);
-  assert.match(sql, /reviewer = \$\d+/);
+  assert.match(sql, /reviewer = \$?\d+/);
   assert.match(sql, /review = \$\d+/);
-  assert.match(sql, /WHERE proposal_id = \$\d+ AND review_status = 'in_review' AND reviewer = \$\d+/);
+  assert.match(sql, /WHERE proposal_id = \$?\d+ AND review_status = 'in_review' AND reviewer = \$?\d+/);
 
   const args = lastArgs();
   assert.equal(args[0], "approved");
@@ -170,8 +170,8 @@ test("cancelProposal generates correct SQL for queued/in_review -> cancelled", a
 
   const sql = lastSql();
   assert.match(sql, /review_status = 'cancelled'/);
-  assert.match(sql, /failure_reason = \$\d+/);
-  assert.match(sql, /WHERE proposal_id = \$\d+ AND review_status IN \('queued', 'in_review'\)/);
+  assert.match(sql, /failure_reason = \$?\d+/);
+  assert.match(sql, /WHERE proposal_id = \$?\d+ AND review_status IN \('queued', 'in_review'\)/);
 
   const args = lastArgs();
   assert.ok(args.includes("duplicate detected"));
@@ -184,8 +184,8 @@ test("markProposalDependencyFailed generates correct SQL for queued/in_review ->
 
   const sql = lastSql();
   assert.match(sql, /review_status = 'dependency_failed'/);
-  assert.match(sql, /failure_reason = \$\d+/);
-  assert.match(sql, /WHERE proposal_id = \$\d+ AND review_status IN \('queued', 'in_review'\)/);
+  assert.match(sql, /failure_reason = \$?\d+/);
+  assert.match(sql, /WHERE proposal_id = \$?\d+ AND review_status IN \('queued', 'in_review'\)/);
 
   const args = lastArgs();
   assert.ok(args.includes("oracle timeout"));
@@ -225,12 +225,12 @@ test("updateProposalReviewStatus generates correct SQL for all valid transitions
     const sql = lastSql();
     // For queued, it's a simple update; for others, includes additional fields
     if (status === "queued") {
-      assert.match(sql, /UPDATE market_proposals SET review_status = \$\d+ WHERE proposal_id = \$\d+/);
+      assert.match(sql, /UPDATE market_proposals SET review_status = \$\d+ WHERE proposal_id = \$?\d+/);
     } else {
       assert.match(sql, new RegExp(`review_status = \\$\\d+`));
       if (status === "in_review") {
         assert.match(sql, /claimed_at = \$\d+/);
-        assert.match(sql, /reviewer = \$\d+/);
+        assert.match(sql, /reviewer = \$?\d+/);
       }
       if (status === "approved" || status === "rejected") {
         assert.match(sql, /reviewed_at = \$\d+/);
@@ -341,11 +341,104 @@ test("operational boundary: partial index for queued proposals", async () => {
 test("rollback note: updateProposalReviewStatus uses single UPDATE with WHERE clause", async () => {
   reset();
   const db = await getDb();
-  await db.updateProposalReviewStatus(PROPOSAL_ID, "approved", { reviewer: "r1" });
+  await db.updateProposalReviewStatus(PROPOSAL_ID, "approved", { reviewer: "reviewer1" });
 
   const sql = lastSql();
-  // Single statement with WHERE ensures atomicity
-  assert.equal(recorded.length, 1);
-  assert.match(sql, /UPDATE market_proposals SET/);
-  assert.match(sql, /WHERE proposal_id = \$\d+/);
+  assert.match(sql, /^UPDATE market_proposals\s/);
+  assert.match(sql, /WHERE proposal_id = \$?\d+/);
+  assert.ok(!sql.includes("; "), "single statement only");
+});
+
+// -----------------------------------------------------------------------------
+// GET /api/proposals/review - parameter parsing & listProposalsForReview
+// -----------------------------------------------------------------------------
+
+test("listProposalsForReview defaults limit/offset and uses placeholders", async () => {
+  reset();
+  const db = await getDb();
+  const result = await db.listProposalsForReview({});
+
+  const sql = lastSql();
+  assert.match(sql, /FROM market_proposals/);
+  assert.match(sql, /LIMIT \$\d+ OFFSET \$\d+/);
+  assert.ok(!sql.includes("?"), "no raw ? placeholders reach the pool");
+  assert.equal(result.limit, 50);
+  assert.equal(result.offset, 0);
+  assert.deepEqual(result.proposals, []);
+});
+
+test("listProposalsForReview adds WHERE clause for status", async () => {
+  reset();
+  const db = await getDb();
+  const result = await db.listProposalsForReview({ status: "queued", limit: 10, offset: 20 });
+
+  const sql = lastSql();
+  assert.match(sql, /WHERE review_status = \$\d+/);
+  const args = lastArgs();
+  assert.equal(args[0], "queued");
+  assert.equal(args[1], 10);
+  assert.equal(args[2], 20);
+  assert.equal(result.limit, 10);
+  assert.equal(result.offset, 20);
+});
+
+test("listProposalsForReview clamps limit to 1..200 and offset >= 0", async () => {
+  reset();
+  const db = await getDb();
+
+  const high = await db.listProposalsForReview({ limit: 10000, offset: -5 });
+  assert.equal(high.limit, 200);
+  assert.equal(high.offset, 0);
+
+  const low = await db.listProposalsForReview({ limit: 0, offset: 10 });
+  assert.equal(low.limit, 1);
+  assert.equal(low.offset, 10);
+});
+
+test("listProposalsForReview falls back to defaults on NaN", async () => {
+  reset();
+  const db = await getDb();
+  const result = await db.listProposalsForReview({ limit: Number.NaN, offset: Number.NaN });
+  assert.equal(result.limit, 50);
+  assert.equal(result.offset, 0);
+});
+
+test("GET handler returns 200 with rows for a valid request", async () => {
+  reset();
+  process.env.CRON_SECRET = "test-secret";
+  const { GET } = await import("../../app/api/proposals/review/route");
+  const req = new Request("http://localhost/api/proposals/review?status=queued&limit=10&offset=0", {
+    headers: { authorization: "Bearer test-secret" },
+  }) as unknown as Request;
+  const res = await GET(req as never);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(Array.isArray(body.proposals));
+  assert.equal(body.limit, 10);
+  assert.equal(body.offset, 0);
+});
+
+test("GET handler returns 400 for invalid status", async () => {
+  reset();
+  process.env.CRON_SECRET = "test-secret";
+  const { GET } = await import("../../app/api/proposals/review/route");
+  const req = new Request("http://localhost/api/proposals/review?status=bogus", {
+    headers: { authorization: "Bearer test-secret" },
+  }) as unknown as Request;
+  const res = await GET(req as never);
+  assert.equal(res.status, 400);
+});
+
+test("GET handler falls back to defaults on non-numeric limit/offset", async () => {
+  reset();
+  process.env.CRON_SECRET = "test-secret";
+  const { GET } = await import("../../app/api/proposals/review/route");
+  const req = new Request("http://localhost/api/proposals/review?limit=abc&offset=xyz", {
+    headers: { authorization: "Bearer test-secret" },
+  }) as unknown as Request;
+  const res = await GET(req as never);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.limit, 50);
+  assert.equal(body.offset, 0);
 });

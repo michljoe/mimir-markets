@@ -10,7 +10,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-export type LLMProvider = "gemini" | "anthropic" | "groq" | "openrouter";
+import { createLLMRouter } from "./llm/router";
+
+export type { LLMProvider } from "./llm/router";
 
 export interface CallLLMOptions {
   /** Max output tokens. Defaults to 1024. */
@@ -113,10 +115,21 @@ const GROQ_QUOTA_COOLDOWN_MS = Number(process.env.GROQ_QUOTA_COOLDOWN_MS ?? "270
 const OPENROUTER_QUOTA_COOLDOWN_MS = Number(process.env.OPENROUTER_QUOTA_COOLDOWN_MS ?? "2700000"); // 45 min
 
 let anthropicClient: Anthropic | null = null;
-let openrouterCooldownUntil = 0;
-const groqCooldownByKey = new Map<string, number>();
-// Keyed by `${keyFingerprint}|${model}` — rate limits are per project (key) per model.
-const geminiCooldownByCombo = new Map<string, number>();
+
+const llmRouter = createLLMRouter({
+  now: () => Date.now(),
+  cooldowns: {
+    gemini: Number(process.env.LLM_QUOTA_COOLDOWN_MS ?? "300000"),
+    groq: Number(process.env.GROQ_QUOTA_COOLDOWN_MS ?? "2700000"),
+    openrouter: Number(process.env.OPENROUTER_QUOTA_COOLDOWN_MS ?? "2700000"),
+  },
+  providers: [
+    { id: "gemini", enabled: () => geminiKeyList().length > 0, keys: geminiKeyList, models: geminiModelPool },
+    { id: "groq", enabled: () => getGroqKeys().length > 0, keys: getGroqKeys },
+    { id: "openrouter", enabled: () => !!process.env.OPENROUTER_API_KEY?.trim() },
+    { id: "anthropic", enabled: () => !!process.env.ANTHROPIC_API_KEY?.trim() },
+  ],
+});
 
 function cooldownRemaining(until: number): number {
   const remaining = until - Date.now();
@@ -145,21 +158,16 @@ function geminiKeyList(): string[] {
 }
 
 function geminiComboCooldown(key: string, model: string): number {
-  return cooldownRemaining(geminiCooldownByCombo.get(`${keyFingerprint(key)}|${model}`) ?? 0);
+  return llmRouter.providerCooldown("gemini", key, model);
 }
 
 /** Gemini is "available" while any (key, model) combination is out of cooldown. */
 function geminiCooldownRemaining(): number {
-  const keys = geminiKeyList();
-  const pool = geminiModelPool();
-  if (keys.length === 0) return 0;
-  const combos = keys.flatMap((k) => pool.map((m) => geminiComboCooldown(k, m)));
-  if (combos.some((c) => c === 0)) return 0;
-  return Math.min(...combos);
+  return llmRouter.providerCooldown("gemini");
 }
 
 function openrouterCooldownRemaining(): number {
-  return cooldownRemaining(openrouterCooldownUntil);
+  return llmRouter.providerCooldown("openrouter");
 }
 
 function getGroqKeys(): string[] {
@@ -179,19 +187,15 @@ function getGroqKeys(): string[] {
 }
 
 function groqKeyCooldownRemaining(key: string): number {
-  return cooldownRemaining(groqCooldownByKey.get(key) ?? 0);
+  return llmRouter.providerCooldown("groq", key);
 }
 
 function groqCooldownRemaining(): number {
-  const keys = getGroqKeys();
-  if (keys.length === 0) return 0;
-  const ready = keys.some((key) => groqKeyCooldownRemaining(key) === 0);
-  if (ready) return 0;
-  return Math.min(...keys.map(groqKeyCooldownRemaining));
+  return llmRouter.providerCooldown("groq");
 }
 
 function tripGroqCooldown(key: string): void {
-  groqCooldownByKey.set(key, Date.now() + GROQ_QUOTA_COOLDOWN_MS);
+  llmRouter.tripCooldown("groq", key);
 }
 
 function groqKeyFingerprint(key: string): string {
@@ -199,18 +203,15 @@ function groqKeyFingerprint(key: string): string {
 }
 
 function tripGeminiCooldown(key: string, model: string): void {
-  geminiCooldownByCombo.set(`${keyFingerprint(key)}|${model}`, Date.now() + GEMINI_QUOTA_COOLDOWN_MS);
+  llmRouter.tripCooldown("gemini", key, model);
 }
 
 function tripOpenRouterCooldown(): void {
-  openrouterCooldownUntil = Date.now() + OPENROUTER_QUOTA_COOLDOWN_MS;
+  llmRouter.tripCooldown("openrouter");
 }
 
 function hasProviderKey(provider: LLMProvider): boolean {
-  if (provider === "gemini") return geminiKeyList().length > 0;
-  if (provider === "groq") return getGroqKeys().length > 0;
-  if (provider === "openrouter") return !!process.env.OPENROUTER_API_KEY?.trim();
-  return !!process.env.ANTHROPIC_API_KEY?.trim();
+  return llmRouter.fallbackProviders(provider).includes(provider);
 }
 
 function providerCooldown(provider: LLMProvider): number {
@@ -221,12 +222,7 @@ function providerCooldown(provider: LLMProvider): number {
 }
 
 function fallbackProviders(primary: LLMProvider): LLMProvider[] {
-  const preferred: LLMProvider[] = primary === "openrouter"
-    ? [primary, "groq", "anthropic", "gemini"]
-    : [primary, "groq", "anthropic", "gemini", "openrouter"];
-  return preferred.filter((provider, index) =>
-    preferred.indexOf(provider) === index && hasProviderKey(provider)
-  );
+  return llmRouter.fallbackProviders(primary);
 }
 
 export function activeLLMProvider(): LLMProvider {

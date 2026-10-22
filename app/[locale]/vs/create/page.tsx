@@ -1185,7 +1185,15 @@ export default function CreatePage() {
     // are. A duel is escrowed as a one-slot pool — see lib/market-modes.ts.
     const normalizedOddsMode = settlementModeToOddsMode(settlementMode);
 
-    const inviteKey = isPrivate ? generatePrivateInviteKey() : "";
+    let inviteKey = "";
+    if (isPrivate) {
+      try {
+        inviteKey = generatePrivateInviteKey();
+      } catch (err: any) {
+        toast.error(err?.message || t("errorCreating"));
+        return;
+      }
+    }
     const params: CreateClaimParams = {
       question: parsedQuestion,
       creator_position: parsedCreatorPos,

@@ -46,8 +46,33 @@ import {
   explorerTxUrl,
 } from "./stellar-env";
 
-const horizon = new Horizon.Server(HORIZON_URL);
 const USDC = new Asset(USDC_CODE, USDC_ISSUER);
+
+/**
+ * Minimal seam over the Horizon/Friendbot HTTP surface so tests can run offline.
+ * Production uses the real `Horizon.Server` and global `fetch`.
+ */
+export interface FundingClient {
+  loadAccount(publicKey: string): Promise<Horizon.AccountResponse>;
+  submitTransaction(transaction: unknown): Promise<{ hash: string }>;
+  fetch(input: string | URL): Promise<Response>;
+}
+
+const defaultClient: FundingClient = {
+  loadAccount: (publicKey) => new Horizon.Server(HORIZON_URL).loadAccount(publicKey),
+  submitTransaction: (transaction) =>
+    new Horizon.Server(HORIZON_URL).submitTransaction(
+      transaction as Parameters<Horizon.Server["submitTransaction"]>[0],
+    ),
+  fetch: (input) => fetch(input),
+};
+
+let client: FundingClient = defaultClient;
+
+/** Swap the HTTP/Horizon client (tests only). Pass nothing to restore the default. */
+export function setFundingClient(next?: FundingClient): void {
+  client = next ?? defaultClient;
+}
 
 /**
  * Tolerance over the quoted spot price, so a moving orderbook does not fail the
@@ -66,7 +91,7 @@ export interface AccountState {
 
 export async function readAccount(publicKey: string): Promise<AccountState> {
   try {
-    const account = await horizon.loadAccount(publicKey);
+    const account = await client.loadAccount(publicKey);
     const native = account.balances.find((b) => b.asset_type === "native");
     const line = account.balances.find(
       (b) =>
@@ -93,7 +118,7 @@ export async function ensureAccount(publicKey: string): Promise<"created" | "alr
   const state = await readAccount(publicKey);
   if (state.exists) return "already-exists";
 
-  const response = await fetch(`${FRIENDBOT_URL}/?addr=${encodeURIComponent(publicKey)}`);
+  const response = await client.fetch(`${FRIENDBOT_URL}/?addr=${encodeURIComponent(publicKey)}`);
   if (!response.ok) {
     throw new Error(
       `friendbot ${response.status} for ${publicKey}: ${(await response.text()).slice(0, 300)}`,
@@ -118,7 +143,7 @@ export async function ensureTrustline(
   if (!state.exists) throw new Error(`${keypair.publicKey()} does not exist — fund it first`);
   if (state.usdc !== null) return "already-present";
 
-  const account = await horizon.loadAccount(keypair.publicKey());
+  const account = await client.loadAccount(keypair.publicKey());
   const transaction = new TransactionBuilder(account, {
     fee: BASE_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
@@ -127,7 +152,7 @@ export async function ensureTrustline(
     .setTimeout(60)
     .build();
   transaction.sign(keypair);
-  await horizon.submitTransaction(transaction);
+  await client.submitTransaction(transaction);
   return "created";
 }
 
@@ -139,7 +164,7 @@ export async function quoteXlmCost(amount: string): Promise<string> {
   url.searchParams.set("destination_asset_code", USDC_CODE);
   url.searchParams.set("destination_asset_issuer", USDC_ISSUER);
   url.searchParams.set("destination_amount", amount);
-  const response = await fetch(url);
+  const response = await client.fetch(url);
   if (!response.ok) throw new Error(`horizon paths ${response.status}`);
   const body = (await response.json()) as {
     _embedded?: { records?: Array<{ source_amount: string }> };
@@ -157,7 +182,7 @@ export async function buyUsdc(
   const spot = await quoteXlmCost(amount);
   const sendMax = (Number(spot) * SLIPPAGE).toFixed(7);
 
-  const account = await horizon.loadAccount(keypair.publicKey());
+  const account = await client.loadAccount(keypair.publicKey());
   const transaction = new TransactionBuilder(account, {
     fee: BASE_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
@@ -175,7 +200,7 @@ export async function buyUsdc(
     .setTimeout(120)
     .build();
   transaction.sign(keypair);
-  const result = await horizon.submitTransaction(transaction);
+  const result = await client.submitTransaction(transaction);
   return { hash: result.hash, spentXlm: spot };
 }
 

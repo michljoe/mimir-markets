@@ -60,7 +60,7 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 /**
- * Tomorrow's forecast high per city.
+ * Tomorrow''s forecast high per city.
  *
  * `forecast_days=2` and reading index 1 gives tomorrow in the city's own timezone,
  * which is the day a reader means by "tomorrow" — UTC would put Sydney a day out.

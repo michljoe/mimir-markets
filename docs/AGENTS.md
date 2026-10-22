@@ -5,6 +5,8 @@ CAIP-2 stellar:testnet).
 
 See docs/STELLAR_NETWORK.md for the one-page architecture reference.
 
+See docs/PUBLIC_API.md for the public read endpoints (`/api/vs`, `/api/vs/[id]`, `/api/vs/[id]/reasoning`, `/api/vs/user/[address]`, `/api/challenge-opportunities`, `/api/performance/[address]`, `/api/baskets`, `/api/payments/revenue`, `/api/health`), their params, response shapes, error envelope, `Cache-Control` headers, and rate-limit tier (`public_read`). Private claims require the `invite` parameter.
+
 Repository layout
 Path	Purpose
 contracts-soroban/mimir-market/	Rust/Soroban market contract (USDC escrow, settlement, fee policy)
@@ -93,6 +95,7 @@ environment behavior.
 | `tests/node/node-test-runner.test.ts` | Regression tests for runner safety, cache invalidation, failure handling, and coverage publication |
 | `scripts/lib/browser-smoke-env.mjs` | The smoke harness's strict env allowlist (what a smoke build may see) |
 | `tests/browser/` + `playwright.config.ts` | Playwright browser smoke suite (run via `npm run smoke:browser`) |
+| `docs/PUBLIC_API.md` | Reference for the public read endpoints: params, response shape, errors, cache headers, rate-limit tier |
 
 ## Browser smoke flow (must stay green on release)
 
@@ -115,6 +118,9 @@ heading marker from messages/en.json.
 New secret-shaped env vars: if you add one, confirm it is not in the
 smoke allowlist; add it to the secret samples in tests/node/browser-smoke-env.test.ts.
 Run it before finishing a release-touching PR: npm run smoke:browser.
+Public read endpoints are documented in `docs/PUBLIC_API.md`; keep it in sync
+when adding or changing a route under `app/api/**/route.ts` (outside `agents/v1`
+and `cron`).
 Key rules
 Contract state is the source of truth. Neon Postgres is a read-index cache only.
 Two assets, one job each. Native XLM pays the ledger fee and the account
@@ -316,6 +322,43 @@ https://faucet.circle.com
 Explorer: https://stellar.expert/explorer/testnet
 Public endpoints (rate-limited): https://soroban-testnet.stellar.org and
 https://horizon-testnet.stellar.org
+
+## Traders
+
+Mimir includes three demo BYOA (Bring Your Own Agent) traders in [`agents/traders/`](../agents/traders) that stake their own USDC against open claims:
+- **Momentum Forecaster** (`momentum-forecaster`, 📈): Follows the prevailing trend and base rate.
+- **Contrarian Fader** (`contrarian-fader`, 🔻): Fades crowded, over-extended claims.
+- **Quant Thresholder** (`quant-thresholder`, 📐): Takes claims whose numeric threshold is extreme relative to remaining time.
+
+Each persona evaluates claims using Groq (`LLM_PROVIDER="groq"`), optionally purchases an oracle second opinion over x402, and signs challenge transactions using its own funded Stellar wallet.
+
+Run the trader worker standalone:
+```bash
+npx tsx agents/traders/index.ts
+```
+Or bundled with the other fleet workers:
+```bash
+npm run workers
+```
+
+### Environment variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `TRADER_POLL_INTERVAL_MS` | `900000` (15m) | Polling cadence in milliseconds between market evaluation cycles. |
+| `TRADER_POLL_JITTER_MS` | `90000` (10% of interval) | Random spread in milliseconds applied to the cycle interval (unset defaults to 10% of `TRADER_POLL_INTERVAL_MS`; `0` restores fixed scheduling). |
+| `TRADER_MAX_STAKES_PER_CYCLE` | `1` | Maximum number of open claims each trader persona will challenge per cycle. |
+| `TRADER_MAX_PAID_READS_PER_CYCLE` | `3` | Maximum number of paid oracle second opinions bought per trader per cycle. Set to `0` to disable paid reads entirely. |
+| `TRADER_DRY_RUN` | `""` (disabled) | When set to `"1"`, logs decisions and planned stakes without broadcasting on-chain transactions or spending USDC. |
+| `MIMIR_URL` | `""` | Base URL of the Mimir app instance (e.g. `http://localhost:3000`) used to buy x402 oracle second opinions via `POST /api/oracle`. Second-opinion purchase is skipped when unset or empty. |
+| `TRADER_BUY_ORACLE` | `"1"` (enabled) | Set to `"0"` to disable purchasing oracle second opinions over x402, evaluating claims using only persona reasoning. Any other value or unset enables oracle purchases. |
+| `TRADER_MOMENTUM_SECRET` | _(none)_ | Stellar secret seed (`S…`) for the Momentum Forecaster persona (`momentum-forecaster`). Trader is skipped if unset or invalid. |
+| `TRADER_CONTRA_SECRET` | _(none)_ | Stellar secret seed (`S…`) for the Contrarian Fader persona (`contrarian-fader`). Trader is skipped if unset or invalid. |
+| `TRADER_QUANT_SECRET` | _(none)_ | Stellar secret seed (`S…`) for the Quant Thresholder persona (`quant-thresholder`). Trader is skipped if unset or invalid. |
+| `TRADER_MOMENTUM_PUBLIC` | _(derived)_ | Stellar public key (`G…`) for the Momentum Forecaster persona. Derived from secret key by wallet tooling. |
+| `TRADER_CONTRA_PUBLIC` | _(derived)_ | Stellar public key (`G…`) for the Contrarian Fader persona. Derived from secret key by wallet tooling. |
+| `TRADER_QUANT_PUBLIC` | _(derived)_ | Stellar public key (`G…`) for the Quant Thresholder persona. Derived from secret key by wallet tooling. |
+| `GROQ_API_KEY` | _(none)_ | Groq API key used for trader LLM inference (`agents/traders/index.ts` sets `LLM_PROVIDER = "groq"`). |
 
 ## Demo seed claims
 

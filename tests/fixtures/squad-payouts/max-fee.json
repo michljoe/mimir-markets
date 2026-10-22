@@ -1,0 +1,13 @@
+{
+  "description": "Two equal winners at the maximum 1000 bps (10%) profit fee.",
+  "winners": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "depositAtomic": "1000" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "1000" }
+  ],
+  "losingPoolAtomic": "1000",
+  "feeBps": 1000,
+  "expected": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "1450" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "netAtomic": "1450" }
+  ]
+}

@@ -6,7 +6,12 @@
  * dependency failures stay explicit (no silent empty states that look funded).
  */
 
-export type AsyncPanelKind = "dashboard" | "explorer" | "council" | "market";
+export type AsyncPanelKind =
+  | "dashboard"
+  | "explorer"
+  | "council"
+  | "market"
+  | "stats";
 
 export type AsyncPanelPhase =
   | "idle"

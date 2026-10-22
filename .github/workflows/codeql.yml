@@ -1,0 +1,58 @@
+name: codeql
+
+# GitHub's static analysis for JavaScript/TypeScript. Free for public repos and
+# needs no repository secrets: CodeQL builds a database from the checked-out
+# source, then uploads its results to the code-scanning API.
+#
+# Findings appear as code-scanning alerts in the Security tab. The analyze step
+# does not fail the workflow on findings, so the first rollout collects a
+# baseline instead of blocking every open pull request. Gate merges on the
+# alerts in branch protection once that baseline has been triaged.
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, off the hour, so a query-pack update is exercised even when no
+    # pull request is open.
+    - cron: "41 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Required to upload the SARIF results to code scanning.
+      security-events: write
+      # Read-only checkout; the analysis needs no write access to the repo.
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Read-only job. Leaving a token in .git/config would let the
+          # analysis database carry a credential it does not need.
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Fixtures and generated bindings are not product code; scanning them
+          # adds alerts nobody can fix in this repository.
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

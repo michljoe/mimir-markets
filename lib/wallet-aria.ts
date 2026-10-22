@@ -466,6 +466,69 @@ export function headerWalletButtonLabel(
   return `${name}${address}`;
 }
 
+// ── Address copy feedback ───────────────────────────────────────────────────
+
+export type CopyFeedbackStatus =
+  | "idle"
+  | "success"
+  | "error"
+  | "failure"
+  | "copied"
+  | "failed";
+
+/**
+ * Message announced by the live region (`role="status"`) when an address
+ * copy action succeeds or fails.
+ *
+ * Keeping this distinct from the button's aria-label avoids layout shifts and
+ * ensures screen readers announce the state change without losing focus or
+ * reading stale labels.
+ *
+ * @example
+ *   copyFeedbackMessage("success")
+ *   // → "Address copied"
+ *
+ *   copyFeedbackMessage("success", "creator")
+ *   // → "creator address copied"
+ *
+ *   copyFeedbackMessage("error")
+ *   // → "Failed to copy address"
+ *
+ *   copyFeedbackMessage("idle")
+ *   // → ""
+ */
+export function copyFeedbackMessage(
+  status: CopyFeedbackStatus | boolean | null | undefined,
+  label?: string | null,
+): string {
+  const context = label?.trim();
+
+  if (status === "success" || status === "copied" || status === true) {
+    return context ? `${context} address copied` : "Address copied";
+  }
+
+  if (status === "error" || status === "failure" || status === "failed") {
+    return context ? `Failed to copy ${context} address` : "Failed to copy address";
+  }
+
+  return "";
+}
+
+export const copyStatusMessage = copyFeedbackMessage;
+export const getCopyFeedbackMessage = copyFeedbackMessage;
+export const getCopyStatusMessage = copyFeedbackMessage;
+
+/**
+ * The accessible name for an address copy button.
+ *
+ * Describes the action rather than the current state, keeping the accessible
+ * name stable while assistive tech announces results via role="status".
+ */
+export function copyAddressActionLabel(address: string, label?: string | null): string {
+  const context = label?.trim();
+  return `Copy ${context ? `${context} ` : ""}address ${address}`;
+}
+
 // ── Permission and spend-permission context ───────────────────────────────────
 
 /**

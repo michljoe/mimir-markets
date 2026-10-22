@@ -58,7 +58,20 @@ import { MIN_STAKE_USDC, unitsToUsdc, usdcToUnits } from "./usdc";
 import { normalizeCategoryId, ZERO_ADDRESS } from "./constants";
 import { guardChallenge, toCanonicalMode } from "./market-modes";
 import { checkWriteAllowed } from "./ops/flags";
-import { wrapStellarTransactionError } from "./settlement-retry";
+import {
+  contractErrorFromRustError,
+  contractReadErrorFromRustError,
+  contractWriteErrorFromRustError,
+  isContractError,
+  isContractReadError,
+  isContractWriteError,
+  categoryForError,
+  categoryForLabel,
+  CONTRACT_ERROR_LABELS,
+  type ContractError,
+  type ContractReadError,
+  type ContractWriteError,
+} from "./contract-errors";
 import { availableCreatorLiquidityUnits } from "./payout";
 import { decodeHash32Hex } from "./content-hash";
 import { getDemoSecret } from "./demo-signers";
@@ -289,6 +302,16 @@ export interface VSDetailSnapshot {
 /** A wallet argument: a real signer, or a bare address for legacy call sites. */
 export type WalletArg = string | StellarSigner;
 
+/**
+ * Machine-readable contract error surfaced to the app.
+ *
+ * `code` is a compact, stable id (e.g. `claim_not_open`) that survives JSON
+ * round-trips and is what server routes turn into `createApiError(code, msg)`.
+ * `category` is the UI/analytics bucket. `userMessage` is the actionable copy a
+ * person can act on; it is never raw Rust. `retryable` is always false here:
+ * a contract revert means the request was wrong, not that the network hiccuped.
+ */
+
 // ── State / side mappers ──────────────────────────────────────────────────────
 function mapState(state: MimirMarket.ClaimState): ClaimData["state"] {
   switch (state) {
@@ -356,7 +379,7 @@ function unwrap<T>(label: string, result: unknown): T {
         error && typeof error === "object" && "message" in error
           ? String((error as { message: unknown }).message)
           : JSON.stringify(error);
-      throw new Error(`${label}: ${message}`);
+      throw contractErrorFromRustError(error, categoryForLabel(label));
     }
     return rustResult.unwrap();
   }

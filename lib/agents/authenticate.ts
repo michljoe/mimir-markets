@@ -68,7 +68,7 @@ export async function authenticateAgentRequest(args: {
 
   if (!presented) {
     // No key: the caller must be signing. Still rate-limited, by IP and route.
-    const gate = authorizeRequest("public_read", { route, ip: args.ip });
+    const gate = await authorizeRequest("public_read", { route, ip: args.ip });
     if (!gate.allowed && gate.error) return { error: gate.error };
     return { auth: { kind: "signature" } };
   }
@@ -107,7 +107,7 @@ export async function authenticateAgentRequest(args: {
     };
   }
 
-  const gate = authorizeRequest("api_key_agent", {
+  const gate = await authorizeRequest("api_key_agent", {
     route, ip: args.ip, agentId: checked.record.agentId,
   });
   if (!gate.allowed && gate.error) return { error: gate.error };

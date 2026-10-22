@@ -40,6 +40,7 @@ import {
   type HealthSnapshot,
   type Severity,
 } from "./health";
+import { auditCouncilPayouts, type CouncilPayoutAudit } from "./council-payouts";
 import {
   STELLAR_NETWORK,
   NETWORK_PASSPHRASE,
@@ -113,6 +114,17 @@ export interface OperationalMetadata {
   timestampMs: number;
 }
 
+export interface ConfigurationStatus {
+  /**
+   * Per-persona payout addresses for the paid council routes.
+   *
+   * Informational, not an alarm on its own: a missing address only blocks that
+   * persona's quotes. A secret seed where a public key belongs is a leak, and
+   * does degrade the overall status to `warn`.
+   */
+  councilPayouts: CouncilPayoutAudit;
+}
+
 export interface OperationalStatusReport {
   status: OperationalStatusLevel;
   mode: OperationalMode;
@@ -121,6 +133,7 @@ export interface OperationalStatusReport {
   capabilities: CapabilitiesStatus;
   health: HealthReport;
   metadata: OperationalMetadata;
+  configuration: ConfigurationStatus;
   failureModes: string[];
   rollbackGuidance: Record<string, string>;
 }
@@ -408,6 +421,9 @@ export function evaluateOperationalStatusReport(
   const deployment = evaluateDeploymentStatus(options);
   const capabilities = evaluateCapabilitiesStatus(env);
   const metadata = evaluateOperationalMetadata(env, nowMs);
+  const configuration: ConfigurationStatus = {
+    councilPayouts: auditCouncilPayouts(env),
+  };
 
   // If healthSnapshot is provided, evaluate it; otherwise build default/mock
   const healthReport = options.healthSnapshot
@@ -439,6 +455,12 @@ export function evaluateOperationalStatusReport(
   );
   const isReleaseMode = deployment.artifacts.mode === "release";
   const isContractsMissingInRelease = isReleaseMode && !deployment.fundedFeaturesReady;
+  // A seed pasted into a public `_PUBLIC` variable is a leaked signing key, not
+  // merely a bad payout address. Surface it as degraded even though the missing
+  // and malformed cases stay informational.
+  const leakedCouncilPayoutSecret = configuration.councilPayouts.problems.some(
+    (entry) => entry.problem === "secret_seed",
+  );
 
   if (hasCriticalAlarm || hasArtifactError || isContractsMissingInRelease) {
     status = "critical";
@@ -446,7 +468,11 @@ export function evaluateOperationalStatusReport(
   } else if (capabilities.globalPause || capabilities.items.some((c) => c.status === "paused")) {
     status = "warn";
     mode = "paused";
-  } else if (healthReport.status === "warn" || deployment.artifacts.findings.length > 0) {
+  } else if (
+    healthReport.status === "warn" ||
+    deployment.artifacts.findings.length > 0 ||
+    leakedCouncilPayoutSecret
+  ) {
     status = "warn";
     mode = "degraded";
   }
@@ -473,6 +499,7 @@ export function evaluateOperationalStatusReport(
     capabilities,
     health: healthReport,
     metadata,
+    configuration,
     failureModes: [...FAILURE_MODES],
     rollbackGuidance: { ...ROLLBACK_GUIDANCE },
   };

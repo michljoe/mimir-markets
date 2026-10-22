@@ -22,6 +22,10 @@ npm run verify:release-readiness -- --json       # machine-readable report
 # deployment, then runs the checklist in release mode:
 npm run verify:release-readiness -- --evidence evidence.json --mode=release
 npm run verify:release-readiness -- --out release-record.json
+Production installs from the committed lockfile. `vercel.json` sets
+`installCommand` to `npm ci` - the same install CI runs - so a deploy cannot
+resolve a different dependency tree or rewrite `package-lock.json`. Refreshing
+dependencies is a deliberate lockfile commit, not a side effect of deploying.
 Two modes, and the difference is the whole point:
 
 Mode	Meaning

@@ -285,3 +285,66 @@ test("cursor handles hexadecimal strings as invalid", async () => {
   assert.equal(recovered, 0);
   assert.equal(mockSyncMetaStore.get("test_cursor"), "0"); // Set to fallback
 });
+
+// ── Incremental claim events cursor & ingest tests ──────────────────────────
+
+test("claim_events_cursor_ledger cursor survives restarts and advances monotonically", async () => {
+  mockSyncMetaStore.clear();
+  const cursorKey = "claim_events_cursor_ledger";
+
+  // Fresh start: recovers to fallback deploy ledger
+  const initial = await recoverCursor(cursorKey, 1000, mockGetSyncMeta, mockSetSyncMeta);
+  assert.equal(initial, 1000);
+  assert.equal(mockSyncMetaStore.get(cursorKey), "1000");
+
+  // Advance cursor as events are ingested
+  await advanceCursor(cursorKey, 1050, mockGetSyncMeta, mockSetSyncMeta);
+  assert.equal(mockSyncMetaStore.get(cursorKey), "1050");
+
+  // Restart simulation: cursor value persists in sync_meta
+  const afterRestart = await recoverCursor(cursorKey, 1000, mockGetSyncMeta, mockSetSyncMeta);
+  assert.equal(afterRestart, 1050);
+
+  // Monotonic advancement prevents cursor rollback
+  await advanceCursor(cursorKey, 1020, mockGetSyncMeta, mockSetSyncMeta);
+  assert.equal(mockSyncMetaStore.get(cursorKey), "1050"); // Unchanged
+
+  // Higher ledger advances cursor
+  await advanceCursor(cursorKey, 1100, mockGetSyncMeta, mockSetSyncMeta);
+  assert.equal(mockSyncMetaStore.get(cursorKey), "1100");
+});
+
+test("incremental event ingestion filters touched claims from typed events fixtures", () => {
+  // Event fixtures mimicking Soroban contract events:
+  // topic[0] = Symbol(eventName), topic[1] = u64(claimId)
+  const eventFixtures = [
+    { name: "claim_created", claimId: 42, ledger: 1010 },
+    { name: "claim_challenged", claimId: 42, ledger: 1012 },
+    { name: "claim_challenged", claimId: 43, ledger: 1015 },
+    { name: "market_settled", claimId: 42, ledger: 1020 },
+    { name: "claim_resolved", claimId: 42, ledger: 1020 },
+    { name: "claim_cancelled", claimId: 44, ledger: 1025 },
+    { name: "fee_accrued", claimId: 42, ledger: 1020 }, // Non-lifecycle event touched in settlement
+    { name: "unrelated_event", claimId: 99, ledger: 1030 },
+  ];
+
+  const relevantEventNames = new Set([
+    "claim_created", "ClaimCreated",
+    "claim_challenged", "ClaimChallenged",
+    "claim_resolved", "ClaimResolved",
+    "market_settled", "MarketSettled",
+    "claim_cancelled", "ClaimCancelled",
+  ]);
+
+  const touchedClaimIds = new Set<number>();
+  for (const ev of eventFixtures) {
+    if (relevantEventNames.has(ev.name)) {
+      touchedClaimIds.add(ev.claimId);
+    }
+  }
+
+  // Exactly claims 42, 43, 44 are touched; 99 is filtered out
+  assert.deepEqual(Array.from(touchedClaimIds).sort((a, b) => a - b), [42, 43, 44]);
+  // RPC calls scale with touched claims (3), not active claims count
+  assert.equal(touchedClaimIds.size, 3);
+});

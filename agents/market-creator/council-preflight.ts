@@ -1,4 +1,4 @@
-/**
+/*
  * Paid council preflight for the market-creator.
  *
  * The market-creator buys short persona opinions before opening a market. This
@@ -37,7 +37,7 @@ export interface CouncilPreflightOpinion {
   decision: "open" | "revise" | "skip";
   /** Blended score, kept for continuity with the older proposal records. */
   score: number;
-  /** Named dimensions (§10.4). Any may be absent — a persona abstaining on it. */
+  /** Named dimensions (D10.4). Any may be absent — a persona abstaining on it. */
   dimensionScores: Partial<Record<PreflightDimension, number>>;
   suggestedMode?: SettlementMode;
   confidence: number;
@@ -110,6 +110,50 @@ function parseDecision(value: unknown): "open" | "revise" | "skip" {
   return "revise";
 }
 
+/**
+ * Coerce a score or confidence value to a clamped integer. Returns `null`
+ * when the value is not a finite number (string-numeric is accepted).
+ */
+function clampNumeric(value: unknown): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    const num = Number(trimmed);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(0, Math.min(100, Math.round(num)));
+  }
+  return null;
+}
+
+/**
+ * Parse a single persona's preflight response into an opinion.
+ *
+ * Returns `null` when the persona did not provide a finite numeric score — the
+ * caller treats that as an abstention so a malformed answer cannot poison the
+ * average or verdict. Confidence is clamped the same way, defaulting only
+ * when absent (not when malformed).
+ */
+export function parsePreflightOpinion(slug: string, displayName: string, body: PreflightResponse, priceUnits: bigint | null): CouncilPreflightOpinion | null {
+  const score = clampNumeric(body.score);
+  if (score === null) return null;
+  const confidence = clampNumeric(body.confidence) ?? 50;
+  return {
+    slug,
+    displayName,
+    decision: parseDecision(body.decision),
+    score,
+    dimensionScores: parseDimensions(body.dimensions),
+    suggestedMode: parseSuggestedMode(body.suggestedMode),
+    confidence,
+    reasoning: String(body.reasoning ?? "").slice(0, 400),
+    pricePaidUnits: priceUnits != null ? priceUnits.toString() : null,
+  };
+}
+
 export async function gatherCouncilPreflight(args: {
   candidate: ClaimCandidateForPreflight;
   baseUrl: string;
@@ -120,7 +164,7 @@ export async function gatherCouncilPreflight(args: {
   /** The mode the creator intends, so the panel can disagree with it explicitly. */
   requestedMode?: SettlementMode;
 }): Promise<CouncilPreflightResult> {
-  const capUnits = usdcToUnits(args.capUsdc ?? 0.005);
+  const capUnits = usdcToUnits(args.capUsdc ?? 0.0005);
   const personas = selectedPersonas(args.personaCsv);
   const opinions: CouncilPreflightOpinion[] = [];
   let totalPaidUnits = 0n;
@@ -139,17 +183,16 @@ export async function gatherCouncilPreflight(args: {
       const body = (await result.response.json()) as PreflightResponse;
       const priceUnits = result.payment?.priceUnits ?? null;
       if (priceUnits != null) totalPaidUnits += priceUnits;
-      opinions.push({
-        slug: persona.slug,
-        displayName: persona.displayName,
-        decision: parseDecision(body.decision),
-        score: Math.max(0, Math.min(100, Math.round(Number(body.score ?? 50)))),
-        dimensionScores: parseDimensions(body.dimensions),
-        suggestedMode: parseSuggestedMode(body.suggestedMode),
-        confidence: Math.max(0, Math.min(100, Math.round(Number(body.confidence ?? 50)))),
-        reasoning: String(body.reasoning ?? "").slice(0, 400),
-        pricePaidUnits: priceUnits != null ? priceUnits.toString() : null,
-      });
+      const opinion = parsePreflightOpinion(
+        persona.slug,
+        persona.displayName,
+        body,
+        priceUnits,
+      );
+      // A malformed score is an abstention: the persona was paid, but its answer
+      // cannot be counted in the average or vote tallies.
+      if (opinion === null) continue;
+      opinions.push(opinion);
     } catch {
       // Preflight is advisory. A persona that errors simply abstains.
     }

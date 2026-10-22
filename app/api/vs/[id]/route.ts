@@ -35,7 +35,7 @@ export async function GET(
       // Invite keys are guessable by brute force only if guesses are free.
       const { authorizeRequest } = await import("@/lib/api/policy");
       const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
-      const gate = authorizeRequest("public_read", { route: "/api/vs/[id]?invite", ip });
+      const gate = await authorizeRequest("public_read", { route: "/api/vs/[id]?invite", ip });
       if (!gate.allowed && gate.error) {
         return NextResponse.json(gate.error.body, { status: gate.error.status, headers: gate.error.headers });
       }

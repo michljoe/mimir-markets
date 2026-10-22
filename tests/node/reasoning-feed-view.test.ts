@@ -10,6 +10,7 @@ import {
   shortHash,
   type FeedItem,
 } from "../../lib/reasoning/feed-view";
+import { agentLabel, agentOptions } from "../../lib/reasoning/agent-label";
 
 const NOW = 1_800_000_000_000;
 
@@ -112,6 +113,45 @@ test("filter options list every agent even while one is selected", () => {
 test("blank agent ids do not become a filter option", () => {
   const view = buildFeedView([item({ eventId: "a", agentId: "  " }), item({ eventId: "b" })]);
   assert.deepEqual(view.agents, ["stoic"]);
+});
+
+// ── Agent label resolver ────────────────────────────────────────────────
+
+test("agent label resolves a directory entry to its display name", () => {
+  const names = new Map([["agent-1", "Trader One"]]);
+  assert.equal(agentLabel("agent-1", names), "Trader One");
+});
+
+test("agent label resolves a council persona slug via the persona roster", () => {
+  assert.equal(agentLabel("optimist", new Map()), "The Optimist");
+});
+
+test("agent label resolves a philosopher slug via the persona roster", () => {
+  assert.equal(agentLabel("socrates", new Map()), "Socrates");
+});
+
+test("agent label falls back to the id for unknown agents", () => {
+  assert.equal(agentLabel("no-such-agent", new Map()), "no-such-agent");
+});
+
+test("directory data wins over the persona roster", () => {
+  const names = new Map([["optimist", "Custom Optimist"]]);
+  assert.equal(agentLabel("optimist", names), "Custom Optimist");
+});
+
+test("agent options sort by display name and keep ids as values", () => {
+  const names = new Map([
+    ["b", "Beta"],
+    ["a", "Alpha"],
+  ]);
+  const options = agentOptions(["b", "a"], names);
+  assert.deepEqual(options.map((o) => o.id), ["a", "b"]);
+  assert.deepEqual(options.map((o) => o.label), ["Alpha", "Beta"]);
+});
+
+test("unknown ids remain selectable under their own id", () => {
+  const options = agentOptions(["mystery"], new Map());
+  assert.deepEqual(options, [{ id: "mystery", label: "mystery" }]);
 });
 
 // ── Display helpers ───────────────────────────────────────────────────────────

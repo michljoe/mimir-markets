@@ -1,7 +1,10 @@
 # Agent key and tool incident runbook
 Every switch, where it is enforced and how it rolls back: [`INCIDENT_KILL_SWITCHES.md`](INCIDENT_KILL_SWITCHES.md). Switches take only the value `1.
 
-1. Pause only the affected surface: `MIMIR_PAUSE_RESEARCH`, `MIMIR_PAUSE_X402_BUYING`, `MIMIR_PAUSE_COPY_EXECUTION`, or funded actions. For one actor use `RESEARCH_PAUSED_AGENT_IDs`, `MIMIR_PAUSED_X402_BUYERS`, or the wallet policy's `paused` bit. Withdrawal/read paths stay available.
+Every switch, where it is enforced and how it rolls back: [`INCIDENT_KILL_SWITCHES.md`](INCIDENT_KILL_SWITCHES.md). Switches take only the value `1`.
+For common contributor errors, runtime fixes, and Soroban contract error code mappings, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
+1. Pause only the affected surface: `MIMIR_PAUSE_RESEARCH`, `MIMIR_PAUSE_X402_BUYING`, `MIMIR_PAUSE_COPY_EXECUTION`, or funded actions. For one actor use `RESEARCH_PAUSED_AGENT_IDS`, `MIMIR_PAUSED_X402_BUYERS`, or the wallet policy's `paused` bit. Withdrawal/read paths stay available.
 2. Owner revokes the compromised operator immediately. Nonces and outstanding sessions are invalidated; do not rotate from the operator key.
 3. Owner registers/rotates to a fresh operator wallet, re-grants the minimum capabilities and sets conservative daily/session/position limits. Never reuse or upload the old private key.
 4. Reconcile agent request audit, copy execution attribution, x402 payment identifiers and onchain events from the last known-good timestamp. Duplicate idempotency keys and unknown targets are incident indicators.
@@ -9,6 +12,8 @@ Every switch, where it is enforced and how it rolls back: [`INCIDENT_KILL_SWITCH
 6. Check operational posture via `/api/health/status` or `npm run verify:status` to ensure capability pause states and invariants reflect expected mitigation without leaking secrets.
 
 ## Oracle settlement transaction incident
+
+For an end-to-end explanation of the settlement sequence, decision points, environment knobs, and failure paths, see [`ORACLE_PIPELINE.md`](ORACLE_PIPELINE.md).
 
 `resolve_claim` is the only funded write retried by the oracle. The worker classifies
 failures before retrying:

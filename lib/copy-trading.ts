@@ -262,6 +262,108 @@ export function evaluateCopy(permission: CopyPermission, signal: CopySignal, con
   return { allowed: true, stakeUsdc: stake };
 }
 
+/** A `copy_executions` row as delivered by GET /api/copy/permissions (raw
+ *  snake_case columns) or after client-side camel mapping. */
+export interface CopyUsageExecutionRow {
+  status?: unknown;
+  stake_atomic?: unknown;
+  stakeAtomic?: unknown;
+  created_at?: unknown;
+  createdAt?: unknown;
+}
+
+export interface CopyExecutionUsage {
+  usedTodayUsdc: number;
+  usedThisWeekUsdc: number;
+  openExposureUsdc: number;
+  /** Atomic USDC at 7 decimals, as decimal strings for exact display math. */
+  dailyUsedAtomic: string;
+  weeklyUsedAtomic: string;
+  openExposureAtomic: string;
+  /** Epoch ms when the current UTC day / Monday-anchored UTC week ends. */
+  nextDailyResetAtMs: number;
+  nextWeeklyResetAtMs: number;
+  /** Rows actually counted; malformed rows are skipped silently. */
+  countedExecutions: number;
+}
+
+/** Epoch-ms length of a UTC calendar day, the base of both usage windows. */
+const MS_PER_DAY = 86_400_000;
+
+function toAtomicString(value: unknown): bigint | null {
+  if (typeof value === "bigint") return value >= 0n ? value : null;
+  if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value.trim())) return BigInt(value.trim());
+  return null;
+}
+
+function toCreatedMs(value: unknown): number | null {
+  let n: number | null = null;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) n = value;
+  else if (typeof value === "string" && /^\d+$/.test(value.trim())) n = Number(value.trim());
+  if (n === null) return null;
+  // Horizon-era rows may carry seconds; audit rows are written with Date.now().
+  return n < 1e11 ? n * 1000 : n;
+}
+
+/** Convert 7-decimal atomic units to the display number `CopyUsage` carries. */
+function atomicToDisplayUsdc(atomic: bigint): number {
+  const whole = atomic / 10_000_000n;
+  const fraction = atomic % 10_000_000n;
+  const usdc = Number(whole) + Number(fraction) / 1e7;
+  if (!Number.isSafeInteger(usdc * 10_000_000)) throw new Error("usage overflow");
+  return usdc;
+}
+
+/**
+ * Usage against the daily/weekly/open-exposure caps, computed from audit rows
+ * with the same view `evaluateCopy` checks: only `executed` stakes count, and
+ * each `CopyUsage` number is exactly what the gate compares against the caps.
+ *
+ * Windows are UTC-aligned — the day from 00:00 UTC, the week from Monday
+ * 00:00 UTC — so the reset instants are deterministic.
+ *
+ * Realized loss is NOT part of this result: audit rows carry spend, not
+ * settlement outcomes, so feeding the loss ceiling from here would understate
+ * risk. Callers building a `CopyUsage` from this must supply
+ * `realizedLossAtomic` from the settlement source.
+ *
+ * Throws only if a window total exceeds display precision.
+ */
+export function computeCopyUsageFromExecutions(
+  executions: readonly CopyUsageExecutionRow[],
+  now = Date.now(),
+): CopyExecutionUsage {
+  const epochDay = Math.floor(now / MS_PER_DAY);
+  const dayStartMs = epochDay * MS_PER_DAY;
+  // Unix day 0 was a Thursday: shift by 4 for getUTCDay(), then back to Monday.
+  const weekStartMs = dayStartMs - (((epochDay + 4) % 7 + 6) % 7) * MS_PER_DAY;
+  let daily = 0n;
+  let weekly = 0n;
+  let open = 0n;
+  let counted = 0;
+  for (const row of executions) {
+    if (!row || row.status !== "executed") continue;
+    const stakeAtomic = toAtomicString(row.stake_atomic ?? row.stakeAtomic);
+    const createdAt = toCreatedMs(row.created_at ?? row.createdAt);
+    if (stakeAtomic === null || createdAt === null) continue;
+    counted++;
+    open += stakeAtomic;
+    if (createdAt >= dayStartMs) daily += stakeAtomic;
+    if (createdAt >= weekStartMs) weekly += stakeAtomic;
+  }
+  return {
+    usedTodayUsdc: atomicToDisplayUsdc(daily),
+    usedThisWeekUsdc: atomicToDisplayUsdc(weekly),
+    openExposureUsdc: atomicToDisplayUsdc(open),
+    dailyUsedAtomic: daily.toString(),
+    weeklyUsedAtomic: weekly.toString(),
+    openExposureAtomic: open.toString(),
+    nextDailyResetAtMs: dayStartMs + 86_400_000,
+    nextWeeklyResetAtMs: weekStartMs + 7 * 86_400_000,
+    countedExecutions: counted,
+  };
+}
+
 export interface CopyAuditRecord {
   executionId: string;
   permissionId: string;

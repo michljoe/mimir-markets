@@ -58,6 +58,12 @@ export type TierVerdict = (verdict: VerdictPayload) => VerdictPayload;
  */
 export const INVALID_CONFIDENCE_TAG = "[LOW CONFIDENCE — refunded: invalid confidence]";
 
+/**
+ * Injection seams for offline end-to-end settlement tests (#<issue>). All are
+ * optional and default to the production implementations, so callers that do
+ * not pass them keep the exact current behaviour.
+ */
+
 /** The contract summary field is capped to 500 chars. */
 const MAX_EXPLANATION_CHARS = 500;
 
@@ -65,6 +71,12 @@ const MAX_EXPLANATION_CHARS = 500;
 export function isValidConfidence(confidence: number): boolean {
   return Number.isFinite(confidence) && confidence >= 0 && confidence <= 100;
 }
+
+/** Evidence fetcher seam: resolves the evidence payload for a claim. */
+export type EvidenceFetcher = (claim: unknown) => Promise<unknown>;
+
+/** LLM seam: turns evidence into a raw model verdict string. */
+export type VerdictEvaluator = (evidence: unknown) => Promise<string>;
 
 /**
  * Decide how a verdict settles. Pure: same input, same decision, and the input
@@ -111,6 +123,12 @@ export function applySettlementPolicy(
   // The tier only rewrites the explanation when it marks a verdict contested.
   return { outcome: tiered.explanation === verdict.explanation ? "firm" : "contested", verdict: tiered };
 }
+
+/** Contract writer seam: submits a settlement and returns the tx hash. */
+export type SettlementSubmitter = (
+  claim: unknown,
+  verdict: VerdictPayload,
+) => Promise<{ hash: string }>;
 
 /** Short label for oracle logs: FIRM / CONTESTED / DRAW / REFUND(<reason>). */
 export function describeDecision(decision: SettlementDecision): string {

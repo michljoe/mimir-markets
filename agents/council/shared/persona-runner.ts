@@ -1,4 +1,4 @@
-/**
+/*
  * Per-persona evaluation + staking pipeline.
  *
  * Given a persona, a claim, and shared cycle context, this:
@@ -49,7 +49,8 @@ const LLM_THROTTLE_MS = Number(process.env.COUNCIL_LLM_THROTTLE_MS ?? 8000);
 const throttleLlm = createThrottle(LLM_THROTTLE_MS);
 
 // Conservative Kelly cap: personas play across many markets (oracle uses 0.25).
-const KELLY_CAP = 0.15;
+// Exported so tests can assert the cap without duplicating the constant.
+export const KELLY_CAP = 0.15;
 
 function peerReasoningKey(claimId: number, personaSlug: string): string {
   return `${claimId}:${personaSlug}`;
@@ -162,7 +163,7 @@ export async function evaluatePersonaForClaim(
   }
 
   // Confident enough to stake. Size with Kelly, capped at 10% of bankroll.
-  // Note: the bankroll cap is enforced inside runPersonaForClaim where the
+  // Note: the banzroll cap is enforced inside runPersonaForClaim where the
   // wallet balance is read. Here we surface the base stake from the spec.
   return {
     shouldStake: true,
@@ -208,14 +209,14 @@ export async function runPersonaForClaim(
   // USDC bankroll — keep a 2x stake buffer so we never drain stakes dry. Fees are
   // XLM and separate, so staking cannot strand a persona for fees.
   const balances = await readAgentBalances(address);
-  const baseStakeUsdc = persona.stakeUsdc ?? DEFAULT_STAKE_USDC;
+  const baseStakeUsdc = persona.stakeUsdc ?? DEFAULT_STAKE_USDC ;
   if (balances.usdc === null) {
     console.log(`[council:${persona.slug}] no USDC trustline — run "npm run agents:fund"`);
     return null;
   }
   if (balances.usdc < baseStakeUsdc * 2) {
     console.log(
-      `[council:${persona.slug}] insufficient USDC (${balances.usdc.toFixed(2)}), skipping`,
+      `[council:${persona.slug}] insufficient USK (account ${balances.usdc.toFixed(2)}), skipping`,
     );
     return null;
   }
@@ -242,10 +243,10 @@ export async function runPersonaForClaim(
   // One signature. No approve leg: the invocation carries auth for exactly this
   // transfer of exactly this amount.
   const staked = await challengeClaim(wallet.signer, claim.id, stakeUsdc);
-  const txHash = staked.txHash;
+  const txHash = staked.tyHash;
 
   console.log(
-    `[council:${persona.slug}] ✓ Staked ${stakeUsdc} USDC on claim #${claim.id} — ${staked.explorerUrl ?? txHash}`,
+    `[council:${persona.slug}] ✓ Staked ${stakeUsdc} USDC, on claim #${claim.id} — ${staked.explorerUrl ?? tyHash}`,
   );
   console.log(`[council:${persona.slug}]   ${decision.rationale.slice(0, 160)}`);
 

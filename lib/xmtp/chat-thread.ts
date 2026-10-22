@@ -1,6 +1,6 @@
 /**
- * Utilidades de hilo DM (cliente XMTP) — Paso 6: sync global, consentimiento, mensajes.
- * Solo importar desde `"use client"` o hooks.
+ * DM stream utilities (XMTP client) — Step 6: global sync, consent, messages.
+ * Only import from `"use client"` or hooks.
  */
 
 import {
@@ -15,7 +15,7 @@ import {
 import { getXmtpEnv } from "@/lib/xmtp/config";
 import type { XmtpClientInstance } from "@/lib/xmtp/types";
 
-/** Límite de historial por carga / refresco (BigInt por API del SDK). */
+/** History limit per load / refresh (BigInt per the SDK API). */
 export const XMTP_THREAD_MESSAGE_LIMIT = BigInt(40);
 
 export class XmtpPeerUnreachableError extends Error {
@@ -34,18 +34,19 @@ export type XmtpThreadErrorKind =
   | "unknown";
 
 /**
- * Identificador XMTP de la contraparte.
+ * XMTP identifier of the counterpart.
  *
- * ⚠️ Deuda conocida (no la introduce este módulo): el `address` que llega desde
- * `getVsXmtpPeerAddress` es la cuenta Stellar `G…` del rival tal como la guarda
- * el contrato, mientras que su inbox XMTP es la identidad derivada en
- * `lib/xmtp/identity.ts` — que solo su propia firma puede producir, así que no
- * es calculable desde aquí. Resolver el chat 1v1 real necesita un directorio
- * `cuenta Stellar → inbox derivado` que se publique cuando cada usuario deriva
- * la suya; hasta entonces `Client.canMessage` responde `false` y el hilo
- * termina en {@link XmtpPeerUnreachableError}, que es lo que la UI ya muestra.
- * Se deja el comportamiento intacto a propósito: convertirlo en otro error
- * rompería la maqueta de demo que depende de `peer_unreachable`.
+ * ⚠️ Known debt (not introduced by this module): the `address` coming from
+ * `getVsXmtpPeerAddress` is the opponent's Stellar account `G…` as stored
+ * by the contract, while their XMTP inbox is the identity derived in
+ * `lib/xmtp/identity.ts` — which only their own signature can produce, so it
+ * cannot be computed from here. Resolving the real 1v1 chat requires a
+ * `Stellar account → derived inbox` directory that is published when each
+ * user derives their own; until then `Client.canMessage` responds `false`
+ * and the thread ends in {@link XmtpPeerUnreachableError}, which is what the
+ * UI already shows. The behavior is intentionally left unchanged: turning it
+ * into a different error would break the demo mock that depends on
+ * `peer_unreachable`.
  */
 export function peerIdentifierFromAddress(address: string): Identifier {
   return {
@@ -60,7 +61,7 @@ export function sortDecodedMessagesBySentAt(
   return [...list].sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
 }
 
-/** Texto legible de un mensaje decodificado (prioriza contenido de texto). */
+/** Human-readable text of a decoded message (prefers text content). */
 export function getDecodedMessageText(m: DecodedMessage): string {
   const c = m.content;
   if (typeof c === "string") return c;
@@ -120,8 +121,9 @@ function withTimeout<T>(
 }
 
 /**
- * Sincroniza conversaciones permitidas, abre o crea el DM 1v1, ajusta consent
- * si sigue en `Unknown`, sincroniza el hilo y devuelve mensajes ordenados.
+ * Synchronizes allowed conversations, opens or creates the 1v1 DM, adjusts
+ * consent if it is still `Unknown`, syncs the thread and returns sorted
+ * messages.
  */
 export async function ensureVsDmThread(
   client: XmtpClientInstance,
@@ -189,7 +191,7 @@ export async function ensureVsDmThread(
   return { dm: conversation, messages };
 }
 
-/** Recarga mensajes tras `sync` (mismo orden y límite que la apertura). */
+/** Reloads messages after `sync` (same order and limit as opening). */
 export async function loadThreadMessages(dm: Dm): Promise<DecodedMessage[]> {
   const raw = await dm.messages({ limit: XMTP_THREAD_MESSAGE_LIMIT });
   return sortDecodedMessagesBySentAt(raw);

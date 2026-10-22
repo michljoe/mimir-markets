@@ -1,0 +1,60 @@
+# Local Stellar network for full-stack development.
+# Starts the free stellar/quickstart image in local mode with RPC and Friendbot enabled,
+# plus an optional Postgres instance for the web app / workers.
+#
+# Usage:
+#   docker compose -f deploy/local/docker-compose.yml up -d
+#   export STELLAR_NETWORK=local
+#   npm run seed
+#
+# The quickstart container exposes:
+#   - Horizon:      http://localhost:8000
+#   - Soroban RPC:   http://localhost:8000
+#   - Friendbot:     http://localhost:8000/friendbot
+#   - Network passphrase: Standalone Network ; September 2015
+
+services:
+  stellar-local:
+    image: stellar/quickstart:latest
+    container_name: stellar-local
+    command: --local --enable rpc
+    ports:
+      - "8000:8000"
+    environment:
+      # Keep the netword deterministic and friendly for seeding.
+      NETWORK_PASSTHRASE: "Standalone Network ; September 2015"
+    healthcheck:
+      test:
+        - "CMD"
+        - "sh"
+        - "-c"
+        - "curl -sf http://localhost:8000/health || curl -sf http://localhost:8000/"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+    volumes:
+      - stellar-local-data:/opt/stellar/quickstart/.stellar
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: stellar-local-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stellar_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - stellar-local-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "stellar_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  stellar-local-data:
+  stellar-local-postgres:

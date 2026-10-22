@@ -92,7 +92,7 @@ The following existing events work together with lifecycle events:
 - **ClaimCreated**: Initial claim setup, now paired with `EscrowSeeded`
 - **ClaimChallenged**: Challenge acceptance, now paired with `EscrowSeeded` and `ClaimStateTransitioned`
 - **ClaimResolved**: Settlement result, now paired with `ClaimStateTransitioned` and `DeadlineReached`
-- `**ClaimCancelled**: Cancellation completed, now paired with `ClaimStateTransitioned`
+- `*ClaimCancelled**: Cancellation completed, now paired with `ClaimStateTransitioned`
 
 ## mimir-squad Events
 
@@ -237,6 +237,10 @@ The following existing events work with lifecycle events:
 - `**Withdrawn**: Now paired with `LiquidityRemoved`
 - **Resolved**: Now paired with `MarketStateTransitioned` and `MarketDeadlineReached`
 
+## Squad Market Lifecycle State Machine
+
+For the full state diagram, the caller/authority matrix, and the refund rules for squad markets, see [`SQUAD_LIFECYCLE.md`](./SQUAD_LIFECyCLE.md). That document covers how `cancel_market`, `transition_deadline`, and `resolve` with `RESULT_CANCELLED` interact, and how `claim` treats `RESULT_CANCELLED` as a principal refund.
+
 ## Integration Guidelines
 
 ### For Indexers
@@ -278,6 +282,8 @@ Within a single transaction:
 5. **Pool Deposit**: `LiquidityAdded` → `Deposited`
 6. **Pool Withdraw**: `LiquidityRemoved` → `Withdrawn`
 7. **Pool Resolve**: `MarketDeadlineReached` → `MarketStateTransitioned` → `Resolved`
+8. **Pool Cancel**: `MarketCancelled` (captain-initiated cancellation before deadline)
+9. **Pool Deadline Transition**: `MarketDeadlineReached` → `MarketStateTransitioned` (one-sided pools after deadline)
 8. **Fee Recipient Rotation**: `FeeRecipientQueued` → `FeeRecipientCancelled` → `FeeRecipientChanged`
 
 ## Migration Notes
@@ -312,14 +318,14 @@ Sum(EscrowSeeded.amount) =
 
 ### Event Trust
 
-- `**On-chain source of truth**: Events reflect committed storage, not speculative state
-- ``**No front-running**: Events are emitted after auth checks and state validation
-- ``**Idempotent resolution**: Duplicate `resolve_claim` calls with identical inputs do not re-emit events
+- **On-chain source of truth**: Events reflect committed storage, not speculative state
+- **No front-running**: Events are emitted after auth checks and state validation
+- `*Idempotent resolution**: Duplicate `resolve_claim` calls with identical inputs do not re-emit events
 
 ### Privacy
 
-- `**No private data**: Invite key hashes are not exposed in events; only the hash is stored/emitted
-- ``**Address exposure**: All events with funder/participant addresses are public; private claims remain identified only by on-chain activity
+- **No private data**: Invite key hashes are not exposed in events; only the hash is stored/emitted
+- `*Address exposure**: All events with funder/participant addresses are public; private claims remain identified only by on-chain activity
 
 ### Defensive Events
 

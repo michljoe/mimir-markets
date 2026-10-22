@@ -1,0 +1,41 @@
+{
+  "description": "Clear win verdict fixture for oracle settlement end-to-end tests.",
+  "claim": {
+    "id": "claim-clear-win-001",
+    "marketId": "market-clear-win-001",
+    "question": "Did the Falcon 9 launch successfully reach orbit on 2024-09-10?",
+    "outcomes": ["YES", "NO"],
+    "deadline": "2024-09-10T20:00:00Z"
+  },
+  "evidence": {
+    "sources": [
+      {
+        "url": "https://example.org/news/falcon-9-launch",
+        "title": "Falcon 9 reaches orbit in flawless launch",
+        "publishedAt": "2024-09-10T18:42:00Z",
+        "body": "SpaceX confirmed that the Falcon 9 second stage separated nominally and the payload reached target orbit."
+      },
+      {
+        "url": "https://example.org/official/statement",
+        "title": "Official mission statement: Falcon 9 success",
+        "publishedAt": "2024-09-10T19:05:00Z",
+        "body": "The mission team confirmed all primary objectives were met and the vehicle is in a stable orbit."
+      }
+    ]
+  },
+  "llmVerdict": {
+    "outcome": "YES",
+    "confidence": 0.94,
+    "rationale": "Both independent sources report a successful launch and orbit insertion, with no contradicting reports.",
+    "citedSources": [
+      "https://example.org/news/falcon-9-launch",
+      "https://example.org/official/statement"
+    ]
+  },
+  "expectedSettlement": {
+    "side": "YES",
+    "confidence": 0.94,
+    "evidenceHash": "0xb4f7c29a8d3e1567abc90d24e5f8137c9a8b6d4f0e123456789abcdef0123456",
+    "resolvabType": "standard"
+  }
+}

@@ -17,7 +17,7 @@
 
 import "server-only";
 import { buildEnvelope, conformEventProperties, hasRequiredEnvelope, isAnalyticsEvent, type EventInput } from "./events";
-import { redactProperties, redactWalletAddresses } from "./redact";
+import { redactProperties, redactWalletAddresses, trimProperties } from "./redact";
 import { isInternalActor, opaqueAnalyticsId, resolveActor } from "./actor";
 import { currentTraceId } from "../ops/trace";
 import { isTraceId } from "../ops/trace-id";
@@ -90,7 +90,7 @@ export async function capture(args: CaptureArgs): Promise<CaptureResult> {
     agentId: args.agentId,
   });
 
-  const conformed = conformEventProperties(args.event, args.properties ?? {});
+  const conformed = conformEventProperties(args.event, trimProperties(args.properties ?? {}));
   // An explicit trace_id on the call wins over the ambient one; neither is trusted
   // until `buildEnvelope` has checked the shape. The id joins this event to the
   // worker span or request span that produced it — see docs/TRACE_CORRELATION.md.

@@ -248,6 +248,74 @@ export interface AgentBalances {
   hasTrustline: boolean;
 }
 
+/** One agent's balance row, as emitted by `--json`. */
+export interface AgentBalanceRow {
+  role: string;
+  address: string;
+  exists: boolean;
+  xlm: number | null;
+  usdc: number | null;
+  trustline: boolean;
+}
+
+/** Thresholds for {@link checkBalanceThresholds}. `null` disables a check. */
+export interface BalanceThresholds {
+  minXlm?: number | null;
+  minUsdc?: number | null;
+}
+
+/**
+ * Build the machine-readable row for one agent from a {@link readAgentBalances}
+ * result. Kept pure so it can be unit-tested with fixture balances.
+ */
+export function formatAgentBalanceRow(
+  role: string,
+  address: string,
+  balances: AgentBalances,
+): AgentBalanceRow {
+  return {
+    role,
+    address,
+    exists: balances.exists,
+    xlm: balances.xlm,
+    usdc: balances.usdc,
+    trustline: balances.hasTrustline,
+  };
+}
+
+/**
+ * Serialize balance rows for `--json` output. Pure so the CLI can be tested
+ * with fixture balances and the output is guaranteed to parse with `jq`.
+ */
+export function formatAgentBalancesJson(rows: AgentBalanceRow[]): string {
+  return JSON.stringify(rows, null, 2);
+}
+
+/**
+ * Return the roles whose balance is below a configured threshold.
+ *
+ * A missing account (or missing trustline) counts as below any positive
+ * threshold, since the operator asked for "at least N" and there is nothing
+ * there. An empty result means every agent passed.
+ */
+export function checkBalanceThresholds(
+  rows: AgentBalanceRow[],
+  thresholds: BalanceThresholds,
+): AgentBalanceRow[] {
+  const minXlm = thresholds.minXlm ?? null;
+  const minUsdc = thresholds.minUsdc ?? null;
+  if (minXlm === null && minUsdc === null) return [];
+  return rows.filter((row) => {
+    if (minXlm !== null) {
+      if (!row.exists || row.xlm === null || row.xlm < minXlm) return true;
+    }
+    if (minUsdc !== null) {
+      if (!row.trustline || row.usdc === null || row.usdc < minUsdc) return true;
+    }
+    return false;
+  });
+}
+
 /**
  * Native XLM plus the USDC trustline balance, read straight from Horizon.
  *

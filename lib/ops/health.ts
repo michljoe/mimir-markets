@@ -69,6 +69,19 @@ export interface WorkerBeat {
   lastTraceId?: string;
 }
 
+/**
+ * Summary of a trader cycle, reported through the heartbeat so `/api/health`
+ * can tell a healthy cycle from one where every persona failed.
+ */
+export interface TraderCycleSummary {
+  personasRun: number;
+  stakes: number;
+  skips: number;
+  failures: number;
+  /** Personas skipped because a required key was missing. */
+  missingKeySkips: number;
+}
+
 export interface FailureWindow {
   attempts: number;
   failures: number;
@@ -101,6 +114,14 @@ export interface HealthSnapshot {
    * surface, fault-injection profiles) omit it and raise no balance alarms.
    */
   agentBalancesUsdc?: Record<string, number | null>;
+}
+
+export interface TraderCycleSummary {
+  personasRun: number;
+  stakes: number;
+  skips: number;
+  failures: number;
+  missingKeySkips: number;
 }
 
 export interface Thresholds {
@@ -179,6 +200,33 @@ function threshold(
   return null;
 }
 
+/**
+ * Map a trader cycle summary to a heartbeat error string, or undefined when the
+ * cycle is healthy.
+ *
+ * A cycle where every configured persona failed or was skipped for a missing key
+ * is a failing cycle even though the worker itself beat: the process is alive but
+ * doing nothing useful. Partial failures are reported as an error too, so the
+ * detail surfaces on `/api/health`, but the "all failed" case is the one that must
+ * never read as healthy.
+ */
+export function traderCycleError(summary: TraderCycleSummary): string | undefined {
+  const total = summary.personasRun + summary.skips;
+  const bad = summary.failures + summary.missingKeySkips;
+  if (total > 0 && bad >= total) {
+    return `all ${total} trader personas failed or were skipped (failures=${summary.failures}, missingKeySkips=${summary.missingKeySkips})`;
+  }
+  if (summary.failures > 0 || summary.missingKeySkips > 0) {
+    return `trader cycle had failures=${summary.failures}, missingKeySkips=${summary.missingKeySkips} of ${total} personas`;
+  }
+  return undefined;
+}
+
+/** Human-readable detail for a healthy trader cycle, for the heartbeat payload. */
+export function traderCycleDetail(summary: TraderCycleSummary): string {
+  return `personas=${summary.personasRun} stakes=${summary.stakes} skips=${summary.skips} failures=${summary.failures}`;
+}
+
 function rateAlarm(
   id: string,
   window: FailureWindow,
@@ -222,6 +270,8 @@ export interface HealthReport {
     workerTraceIds: Record<string, string | null>;
     /** Decimal USDC balance per worker agent; null where it has no trustline. */
     agentBalancesUsdc: Record<string, number | null>;
+    /** Trader cycle detail per worker, when the beat carried one. */
+    workerDetails: Record<string, string | null>;
   };
 }
 
@@ -234,11 +284,13 @@ export function evaluateHealth(
   const alarms: Alarm[] = [];
   const workerAgesSec: Record<string, number | null> = {};
   const workerTraceIds: Record<string, string | null> = {};
+  const workerDetails: Record<string, string | null> = {};
 
   for (const worker of snapshot.workers) {
     // Validated again here rather than trusted from the snapshot: this function
     // is the one place the id reaches a public, unauthenticated response.
     workerTraceIds[worker.name] = isTraceId(worker.lastTraceId) ? worker.lastTraceId : null;
+    workerDetails[worker.name] = worker.lastDetail ?? null;
     if (worker.lastBeatAtMs === null) {
       // Rule 1: never reported is the worst case, not an unknown to ignore.
       workerAgesSec[worker.name] = null;
@@ -405,6 +457,7 @@ export function evaluateHealth(
       workerAgesSec,
       workerTraceIds,
       agentBalancesUsdc: { ...(snapshot.agentBalancesUsdc ?? {}) },
+      workerDetails,
     },
   };
 }
@@ -445,6 +498,8 @@ export interface HeartbeatPayload {
   intervalSec?: number;
   /** Trace id of the cycle this beat came from, for log correlation. */
   traceId?: string;
+  /** Free-form cycle detail, e.g. the trader summary, for `/api/health`. */
+  detail?: string;
 }
 
 export function encodeHeartbeat(payload: HeartbeatPayload): string {
@@ -472,6 +527,7 @@ export function decodeHeartbeat(raw: string | null): HeartbeatPayload | null {
     const error = (parsed as { error?: unknown }).error;
     const intervalSec = (parsed as { intervalSec?: unknown }).intervalSec;
     const traceId = (parsed as { traceId?: unknown }).traceId;
+    const detail = (parsed as { detail?: unknown }).detail;
     const payload: HeartbeatPayload = {
       atMs,
       error: typeof error === "string" && error.length > 0 ? error : undefined,
@@ -480,6 +536,7 @@ export function decodeHeartbeat(raw: string | null): HeartbeatPayload | null {
           ? intervalSec
           : undefined,
     };
+    if (typeof detail === "string" && detail.length > 0) payload.detail = detail;
     // Omitted rather than set to `undefined`: this field is additive, and a row
     // written before it existed must decode to exactly what it always did. An
     // explicit `traceId: undefined` key is a different object under deep equality,

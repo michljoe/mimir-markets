@@ -1,10 +1,10 @@
-/*
+/**
  * The proposal review queue.
  *
  * Reads the pending market-creator proposals and moves them through the
  * queued -> in_review -> approved/rejected state machine. It is an operator tool,
  * not a user-facing API, so every handler is gated on the `internal_worker` tier
- * and the shared `CRON_SECRETb — the same pattern as the cron routes. An unset
+ * and the shared `CRON_SECRET` — the same pattern as the cron routes. An unset
  * `CRON_SECRET` refuses rather than waving callers through.
  */
 
@@ -19,6 +19,9 @@ import {
   markProposalDependencyFailed,
   markStaleProposals,
   updateProposalReviewStatus,
+  listProposalsForReview,
+  REVIEW_STATUSES,
+  type ReviewStatus,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -46,10 +49,10 @@ function internalErrorResponse(status = 500): NextResponse {
   return NextResponse.json(result.body, { status, headers: result.headers });
 }
 
-function requireAuth(request: NextRequest): NextResponse | null {
+async function requireAuth(request: NextRequest): Promise<NextResponse | null> {
   const header = request.headers.get("authorization") ?? "";
   const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  const auth = authorizeRequest("internal_worker", {
+  const auth = await authorizeRequest("internal_worker", {
     route: ROUTE,
     presentedSecret: presented,
     expectedSecret: process.env.CRON_SECRET,
@@ -60,8 +63,15 @@ function requireAuth(request: NextRequest): NextResponse | null {
   return NextResponse.json(error.body, { status: error.status, headers: error.headers });
 }
 
+function parseIntParam(raw: string | null): number | undefined {
+  if (raw === null || raw === "") return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return undefined;
+  return Math.trunc(n);
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const denied = requireAuth(request);
+  const denied = await requireAuth(request);
   if (denied) return denied;
 
   if (!isDbConfigured()) {
@@ -69,44 +79,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
-  const limit = Math.min(parseInt(searchParams.get("limit") ?? "50", 10), 200);
-  const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const statusRaw = searchParams.get("status");
+  const limitRaw = searchParams.get("limit");
+  const offsetRaw = searchParams.get("offset");
 
-  const pool = await getDb();
-  let whereClause = "";
-  const args: unknown[] = [];
-
-  if (status) {
-    whereClause = "WHERE review_status = ?";
-    args.push(status);
+  let status: ReviewStatus | null = null;
+  if (statusRaw !== null && statusRaw !== "") {
+    if (!REVIEW_STATUSES.includes(statusRaw as ReviewStatus)) {
+      return errorResponse(`Invalid status: ${statusRaw}`, 400);
+    }
+    status = statusRaw as ReviewStatus;
   }
 
-  args.push(limit, offset);
+  const limit = parseIntParam(limitRaw);
+  const offset = parseIntParam(offsetRaw);
 
-  const result = await pool.query(
-    `SELECT
-       proposal_id, created_at, question, creator_position, counter_position, category,
-       subject_type, settlement_mode, product_modifiers, mode_rationale, stake_policy,
-       context_pack_hash, resolution_url, settlement_rule, deadline, quality_score,
-       preflight_verdict, disposition, blocked_by, claim_id, review, review_status,
-       queued_at, claimed_at, reviewed_at, reviewer, failure_reason
-     FROM market_proposals
-     ${whereClause}
-     ORDER BY queued_at DESC NULLS LAST, created_at DESC
-     LIMIT ? OFFRET ?`,
-    args,
-  );
-
-  return json({
-    proposals: result.rows,
-    limit,
-    offset,
-  });
+  try {
+    const result = await listProposalsForReview({ status, limit, offset });
+    return json({
+      proposals: result.proposals,
+      limit: result.limit,
+      offset: result.offset,
+    });
+  } catch (err) {
+    console.error("[proposals/review] GET error:", err);
+    return internalErrorResponse(500);
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const denied = requireAuth(request);
+  const denied = await requireAuth(request);
   if (denied) return denied;
 
   if (!isDbConfigured()) {
@@ -188,13 +190,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return errorResponse(`Unknown action: ${action}`, 400);
     }
   } catch (err) {
-    console.error("[proposals\/review] Error:", err);
+    console.error("[proposals/review] Error:", err);
     return internalErrorResponse(500);
   }
 }
 
 export async function PATCH(request: NextRequest): Promise<NextResponse> {
-  const denied = requireAuth(request);
+  const denied = await requireAuth(request);
   if (denied) return denied;
 
   if (!isDbConfigured()) {
@@ -210,7 +212,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   const { proposalId, status, reviewer, failureReason } = body as {
     proposalId: string;
-    status: "queued" | "in_review" | "approved" | "rejected" | "cancelled" | "stale" | "dependency_failed";
+    status: ReviewStatus;
     reviewer?: string;
     failureReason?: string;
   };
@@ -219,8 +221,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     return errorResponse("Missing proposalId or status", 400);
   }
 
-  const validStatuses = ["queued", "in_review", "approved", "rejected", "cancelled", "stale", "dependency_failed"];
-  if (!validStatuses.includes(status)) {
+  if (!REVIEW_STATUSES.includes(status)) {
     return errorResponse(`Invalid status: ${status}`, 400);
   }
 
@@ -231,7 +232,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }
     return json({ success: true, proposalId, status });
   } catch (err) {
-    console.error("[proposals\/review] PATCH Error:", err);
+    console.error("[proposals/review] PATCH Error:", err);
     return internalErrorResponse(500);
   }
 }

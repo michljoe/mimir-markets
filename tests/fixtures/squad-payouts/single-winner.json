@@ -1,0 +1,11 @@
+{
+  "description": "Single winner takes the entire losing pool with no fee.",
+  "winners": [
+    { "participant": "GALANCER000000000000000000000000000000000000000000000000", "depositAtomic": "1000" }
+  ],
+  "losingPoolAtomic": "500",
+  "feeBps": 0,
+  "expected": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "1500" }
+  ]
+}

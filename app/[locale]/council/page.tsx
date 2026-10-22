@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { readContractActivity } from "@/lib/server/contract-activity";
 import { readAgentBalances } from "@/lib/agent-wallets";
@@ -9,11 +10,7 @@ import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { AddressChip } from "@/components/ui/AddressChip";
-
-export const metadata = {
-  title: "Council",
-  description: "Twenty AI personas reading on-chain claims and staking USDC based on character.",
-};
+import { CouncilPanelSkeleton } from "@/components/ui/AsyncPanelSkeleton";
 
 export const revalidate = 30;
 
@@ -196,12 +193,105 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function CouncilPage() {
-  const stats = await fetchCouncilStats();
+function CouncilSummarySkeleton() {
+  return (
+    <div
+      className="flex flex-wrap items-center justify-center gap-2 pt-2"
+      aria-busy
+      aria-label="Loading council summary"
+      role="status"
+    >
+      <span className="sr-only">Loading council summary</span>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <span
+          key={i}
+          className="h-6 w-28 rounded-md bg-pv-ink/[0.08] motion-safe:animate-pulse motion-reduce:animate-none motion-reduce:opacity-90"
+          aria-hidden
+        />
+      ))}
+    </div>
+  );
+}
+
+function CouncilGridSkeleton() {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <CouncilPanelSkeleton rows={4} />
+      <CouncilPanelSkeleton rows={4} className="hidden md:block" />
+      <CouncilPanelSkeleton rows={4} className="hidden lg:block" />
+      <CouncilPanelSkeleton rows={4} className="hidden xl:block" />
+    </div>
+  );
+}
+
+async function CouncilSummary({
+  statsPromise,
+}: {
+  statsPromise: Promise<PersonaStats[]>;
+}) {
+  const stats = await statsPromise;
+  if (stats.length === 0) return null;
 
   const totalStakes       = stats.reduce((acc, s) => acc + s.stakesPlaced, 0);
   const totalStakedUsdc   = stats.reduce((acc, s) => acc + s.totalStakedUsdc, 0);
   const totalBankrollUsdc = stats.reduce((acc, s) => acc + s.bankrollUsdc, 0);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-center gap-2 pt-2 font-mono text-[11px] uppercase tracking-[0.16em]">
+        <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
+          {stats.length} active
+        </span>
+        <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
+          {totalStakes} stakes
+        </span>
+        <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
+          <span className="tabular-nums text-pv-text">{totalStakedUsdc.toFixed(2)}</span> USDC at risk
+        </span>
+        <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
+          bankroll <span className="tabular-nums text-pv-text">{totalBankrollUsdc.toFixed(2)}</span> USDC
+        </span>
+      </div>
+      {/*
+        Said plainly rather than left implied: Soroban RPC retains roughly a
+        week of events, so the stake counts above are a recent window, not a
+        lifetime tally. Presenting a partial count as all-time would make an
+        active persona look idle after a quiet week.
+      */}
+      <p className="pt-1 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-pv-muted">
+        stake counts cover the last ~7 days of ledger events
+      </p>
+    </>
+  );
+}
+
+async function CouncilPersonaGrid({
+  statsPromise,
+}: {
+  statsPromise: Promise<PersonaStats[]>;
+}) {
+  const stats = await statsPromise;
+
+  if (stats.length === 0) {
+    return (
+      <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-12 text-center">
+        <p className="text-base text-pv-text">No council personas configured in this deploy.</p>
+        <p className="mt-2 text-sm text-pv-muted">
+          Run <code className="font-mono text-pv-emerald">npm run agents:create-wallets</code> to provision the 10 local council keys, then add the resulting <code className="font-mono text-pv-emerald">COUNCIL_&lt;SLUG&gt;_ADDRESS</code> env vars to this deploy.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {stats.map((s) => <PersonaCard key={s.persona.slug} stats={s} />)}
+    </section>
+  );
+}
+
+export default function CouncilPage() {
+  const statsPromise = fetchCouncilStats();
 
   return (
     <div className="pb-10">
@@ -214,47 +304,14 @@ export default async function CouncilPage() {
           chase imbalance, specialists only touch their domain. Every stake below is a real
           on-chain USDC stake signed by that persona&apos;s local worker key.
         </p>
-        {stats.length > 0 && (
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 font-mono text-[11px] uppercase tracking-[0.16em]">
-            <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              {stats.length} active
-            </span>
-            <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              {totalStakes} stakes
-            </span>
-            <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              <span className="tabular-nums text-pv-text">{totalStakedUsdc.toFixed(2)}</span> USDC at risk
-            </span>
-            <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              bankroll <span className="tabular-nums text-pv-text">{totalBankrollUsdc.toFixed(2)}</span> USDC
-            </span>
-          </div>
-        )}
-        {/*
-          Said plainly rather than left implied: Soroban RPC retains roughly a
-          week of events, so the stake counts above are a recent window, not a
-          lifetime tally. Presenting a partial count as all-time would make an
-          active persona look idle after a quiet week.
-        */}
-        {stats.length > 0 && (
-          <p className="pt-1 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-pv-muted">
-            stake counts cover the last ~7 days of ledger events
-          </p>
-        )}
+        <Suspense fallback={<CouncilSummarySkeleton />}>
+          <CouncilSummary statsPromise={statsPromise} />
+        </Suspense>
       </header>
 
-      {stats.length === 0 ? (
-        <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-12 text-center">
-          <p className="text-base text-pv-text">No council personas configured in this deploy.</p>
-          <p className="mt-2 text-sm text-pv-muted">
-            Run <code className="font-mono text-pv-emerald">npm run agents:create-wallets</code> to provision the 10 local council keys, then add the resulting <code className="font-mono text-pv-emerald">COUNCIL_&lt;SLUG&gt;_ADDRESS</code> env vars to this deploy.
-          </p>
-        </div>
-      ) : (
-        <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {stats.map((s) => <PersonaCard key={s.persona.slug} stats={s} />)}
-        </section>
-      )}
+      <Suspense fallback={<CouncilGridSkeleton />}>
+        <CouncilPersonaGrid statsPromise={statsPromise} />
+      </Suspense>
 
       <nav className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
         <Link href="/agents" className="text-pv-muted transition-colors hover:text-pv-text">← all agent activity</Link>

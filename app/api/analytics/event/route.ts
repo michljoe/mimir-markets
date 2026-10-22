@@ -17,23 +17,50 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { capture, type CaptureArgs } from "@/lib/analytics/server";
 import { isAnalyticsEvent } from "@/lib/analytics/events";
+import { MAX_EVENT_PAYLOAD_BYTES, trimProperties } from "@/lib/analytics/redact";
 import { tracedRoute } from "@/lib/ops/trace-http";
 
 export const dynamic = "force-dynamic";
 
 /** Do Not Track / Global Privacy Control at the HTTP layer. */
-function serverSideOptOut(req: NextRequest): boolean {
+function serverSideOptOut(req: Request | NextRequest): boolean {
   return req.headers.get("dnt") === "1" || req.headers.get("sec-gpc") === "1";
 }
 
-async function ingest(req: NextRequest): Promise<NextResponse> {
+export async function ingest(
+  req: Request | NextRequest,
+  captureFn: typeof capture = capture,
+): Promise<Response> {
   const noContent = new NextResponse(null, { status: 204 });
   if (serverSideOptOut(req)) return noContent;
 
+  const contentLength = req.headers.get("content-length");
+  if (contentLength) {
+    const parsed = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(parsed) && parsed > MAX_EVENT_PAYLOAD_BYTES) {
+      return noContent;
+    }
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await req.text();
+  } catch {
+    return noContent;
+  }
+
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_EVENT_PAYLOAD_BYTES) {
+    return noContent;
+  }
+
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
+    return noContent;
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return noContent;
   }
 
@@ -49,17 +76,19 @@ async function ingest(req: NextRequest): Promise<NextResponse> {
   const surface = input.envelope?.source_surface;
   if (typeof surface !== "string") return noContent;
 
+  const trimmedProperties = trimProperties(input.properties);
+
   // A browser client may never assert it is an agent: agent events are captured
   // server-side from the workers, where the identity is actually known. Same for
   // actor_type — the client does not get to label itself.
-  await capture({
+  await captureFn({
     event: input.event,
     envelope: {
       ...(input.envelope ?? {}),
       actor_type: "human",
       source_surface: surface,
     } as CaptureArgs["envelope"],
-    properties: input.properties as CaptureArgs["properties"],
+    properties: trimmedProperties as CaptureArgs["properties"],
     address: input.address ?? null,
     isAgent: false,
     idempotencyKey: input.idempotencyKey,
@@ -69,4 +98,4 @@ async function ingest(req: NextRequest): Promise<NextResponse> {
   return noContent;
 }
 
-export const POST = tracedRoute("api.analytics.event", ingest);
+export const POST = tracedRoute("api.analytics.event", (req: NextRequest) => ingest(req));

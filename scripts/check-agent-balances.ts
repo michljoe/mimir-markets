@@ -1,4 +1,17 @@
 /**
+ * Exit codes:
+ *   0  all agents meet the requested thresholds (or no thresholds given)
+ *   1  setup/runtime failure (no wallets configured, Horizon error, bad flag)
+ *   2  at least one agent is below a `--min-usdc` / `--min-xlm` threshold
+ *
+ * Flags:
+ *   --json              print `[{ role, address, exists, xlm, usdc, trustline }]`
+ *   --min-usdc <n>      exit 2 if any agent's USDC balance is below n
+ *   --min-xlm <n>       exit 2 if any agent's XLM balance is below n
+ *
+ * Secret env values are never printed; only public addresses appear in output.
+ */
+/**
  * Read every Mimir agent account off Horizon: native XLM (fees) and the USDC
  * trustline balance (stakes).
  *
@@ -63,6 +76,76 @@ async function withRetry<T>(read: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
+export interface BalanceRow {
+  role: string;
+  address: string;
+  exists: boolean;
+  xlm: number | null;
+  usdc: number | null;
+  trustline: boolean;
+}
+
+export interface Thresholds {
+  minXlm?: number;
+  minUsdc?: number;
+}
+
+export interface ParsedArgs {
+  json: boolean;
+  thresholds: Thresholds;
+}
+
+/** Parse CLI flags. Throws on unknown flags or non-numeric thresholds. */
+export function parseArgs(argv: string[]): ParsedArgs {
+  const parsed: ParsedArgs = { json: false, thresholds: {} };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--json") {
+      parsed.json = true;
+    } else if (arg === "--min-usdc" || arg === "--min-xlm") {
+      const raw = argv[i + 1];
+      if (raw === undefined) throw new Error(`${arg} requires a value`);
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(`${arg} must be a non-negative number, got: ${raw}`);
+      }
+      if (arg === "--min-usdc") parsed.thresholds.minUsdc = value;
+      else parsed.thresholds.minXlm = value;
+      i += 1;
+    } else {
+      throw new Error(`unknown argument: ${arg}`);
+    }
+  }
+  return parsed;
+}
+
+/** Serialize rows for `--json`. `usdc` is null when there is no trustline. */
+export function formatJson(rows: BalanceRow[]): string {
+  return JSON.stringify(rows, null, 2);
+}
+
+/**
+ * Return the roles that fall below any requested threshold. An account that
+ * does not exist, or has no USDC trustline, counts as below any USDC threshold.
+ */
+export function findBelowThreshold(rows: BalanceRow[], thresholds: Thresholds): string[] {
+  const below: string[] = [];
+  for (const row of rows) {
+    if (thresholds.minXlm !== undefined) {
+      if (!row.exists || row.xlm === null || row.xlm < thresholds.minXlm) {
+        below.push(row.role);
+        continue;
+      }
+    }
+    if (thresholds.minUsdc !== undefined) {
+      if (!row.exists || !row.trustline || row.usdc === null || row.usdc < thresholds.minUsdc) {
+        below.push(row.role);
+      }
+    }
+  }
+  return below;
+}
+
 async function main(): Promise<void> {
   const rows: Array<{ label: string; address: string }> = [];
 
@@ -94,33 +177,70 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("Stellar Testnet balances (fee XLM + stake USDC):\n");
-  console.log(`USDC asset: ${USDC_ASSET}\n`);
+  let args: ParsedArgs;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
 
-  let unfunded = 0;
-  let untrusted = 0;
+  if (!args.json) {
+    console.log("Stellar Testnet balances (fee XLM + stake USDC):\n");
+    console.log(`USDC asset: ${USDC_ASSET}\n`);
 
+    let unfunded = 0;
+    let untrusted = 0;
+
+    for (const row of rows) {
+      const state = await withRetry(() => readAccount(row.address));
+      if (!state.exists) {
+        unfunded += 1;
+        console.log(`  ${row.label.padEnd(26)} ${"—".padStart(12)}      ${"no account".padStart(14)}  ${row.address}`);
+        continue;
+      }
+      if (state.usdc === null) untrusted += 1;
+      const usdc = state.usdc === null ? "no trustline" : state.usdc.toFixed(4);
+      console.log(
+        `  ${row.label.padEnd(26)} ${state.xlm.toFixed(4).padStart(12)} XLM ${usdc.padStart(14)} USDC  ${row.address}`,
+      );
+    }
+
+    if (unfunded > 0 || untrusted > 0) {
+      console.log(
+        `\n${unfunded} account(s) missing, ${untrusted} without a USDC trustline — ` +
+          `fix both with: npm run agents:fund`,
+      );
+    }
+    console.log(`\n${getExplorerAccountUrl(rows[0].address)}`);
+  }
+
+  const results: BalanceRow[] = [];
   for (const row of rows) {
     const state = await withRetry(() => readAccount(row.address));
-    if (!state.exists) {
-      unfunded += 1;
-      console.log(`  ${row.label.padEnd(26)} ${"—".padStart(12)}      ${"no account".padStart(14)}  ${row.address}`);
-      continue;
-    }
-    if (state.usdc === null) untrusted += 1;
-    const usdc = state.usdc === null ? "no trustline" : state.usdc.toFixed(4);
-    console.log(
-      `  ${row.label.padEnd(26)} ${state.xlm.toFixed(4).padStart(12)} XLM ${usdc.padStart(14)} USDC  ${row.address}`,
-    );
+    results.push({
+      role: row.label,
+      address: row.address,
+      exists: state.exists,
+      xlm: state.exists ? state.xlm : null,
+      usdc: state.exists ? state.usdc : null,
+      trustline: state.exists && state.usdc !== null,
+    });
   }
 
-  if (unfunded > 0 || untrusted > 0) {
-    console.log(
-      `\n${unfunded} account(s) missing, ${untrusted} without a USDC trustline — ` +
-        `fix both with: npm run agents:fund`,
-    );
+  if (args.json) {
+    console.log(formatJson(results));
   }
-  console.log(`\n${getExplorerAccountUrl(rows[0].address)}`);
+
+  const below = findBelowThreshold(results, args.thresholds);
+  if (below.length > 0) {
+    if (!args.json) {
+      console.error(
+        `\n${below.length} agent(s) below threshold: ${below.join(", ")}`,
+      );
+    }
+    process.exit(2);
+  }
 }
 
 main().catch((error) => {

@@ -1,4 +1,4 @@
-/**
+/*
  * Whoever is behind an address.
  *
  * Every address on Mimir is one of three things and the page has to say which:
@@ -21,12 +21,47 @@ import { getAgentTradeRows, listAgentRecords } from "@/lib/db";
 import { listDirectoryAgents, type DirectoryAgent } from "./agent-directory";
 import { parseAddressParam } from "./api-validation";
 
+export const PROFILE_PAGE_SIZE = 20;
+
+export interface CursorPage<T> {
+  items: T[];
+  /** Cursor for the next page, or null when this is the last page. */
+  nextCursor: string | null;
+}
+
+/**
+ * Slice a descending list at a cursor.
+ *
+ * The cursor is the key of the last item on the previous page, so the
+ * result is stable and shareable: the same `?cursor`= returns the same slice
+ * regardless of what has been added since. A malformed cursor starts from the
+ * top rather than throwing, so a stale link degrades into page 1.
+ */
+export function paginateByCursor<T>(
+  items: T[],
+  cursor: string | null | undefined,
+  pageSize: number,
+  getKey: (item: T) => number,
+): CursorPage<T> {
+  const size = Math.max(1, Math.floor(pageSize));
+  const parsed = cursor == null || cursor === "" ? NaN : Number(cursor);
+  const after = Number.isFinite(parsed) ? parsed : null;
+  const start = after === null ? 0 : items.findIndex((item) => getKey(item) < after);
+  const from = start < 0 ? items.length : start;
+  const slice = items.slice(from, from + size);
+  const hasMore = from + size < items.length;
+  return {
+    items: slice,
+    nextCursor: hasMore && slice.length > 0 ? String(getKey(slice[slice.length - 1])) : null,
+  };
+}
+
 export interface OwnedAgentView extends DirectoryAgent {
   performance: AgentPerformance;
 }
 
 export interface ProfileView {
-  /** A Stellar strkey — `G…` account or `C…` contract — exactly as validated. */
+  /** A stellar strkey — `G …` account or `C…` contract — exactly as validated. */
   address: string;
   /** Set when this address IS an agent rather than a person. */
   agent: DirectoryAgent | null;
@@ -34,14 +69,20 @@ export interface ProfileView {
   ownedAgents: OwnedAgentView[];
   /** This address's own trading, whether it is a person or an agent. */
   performance: AgentPerformance;
+  /** This page's slice of the address's trades, newest claim first. */
   results: AgentTradeResult[];
+  /** Cursor for the next page of results, or null on the last page. */
+  nextCursor: string | null;
   /** Everything the owned agents realised, summed. */
   agentsRealisedPnlAtomic: bigint;
   agentsSettled: number;
 }
 
 export async function buildProfile(
-  rawAddress: string, window: TimeWindow = "all", nowMs = Date.now(),
+  rawAddress: string,
+  window: TimeWindow = "all",
+  nowMs = Date.now(),
+  cursor: string | null = null,
 ): Promise<ProfileView | null> {
   // A Stellar strkey, used verbatim from here on. The `/^0x…{40}$/` guard this
   // replaced rejected every real address, so every profile page returned null;
@@ -78,15 +119,20 @@ export async function buildProfile(
   });
 
   const { performance, results } = computeAgentPerformance(ownRows, { sinceMs });
+  // Newest claim first, then slice at the cursor so the profile page only pays for
+  // the markets it actually renders.
+  const sorted = results.sort((a, b) => b.claimId - a.claimId);
+  const page = paginateByCursor(sorted, cursor, PROFILE_PAGE_SIZE, (result) => result.claimId);
 
   return {
     address,
     agent,
     ownedAgents,
     performance,
-    results: results.sort((a, b) => b.claimId - a.claimId),
-    agentsRealisedPnlAtomic,
-    agentsSettled,
+    results: page.items,
+    nextCursor: page.nextCursor,
+    agentsRealisedPnlAtomic: agentsRealisedPnlAtomic,
+    agentsSettled: agentsSettled,
   };
 }
 

@@ -1,6 +1,7 @@
-/**
- * Reglas de producto: chat XMTP solo en VS 1v1 aceptado (Paso 5).
- * Sin dependencia de `@xmtp/browser-sdk` (seguro para tests / imports server ligeros).
+/*
+ * Product rules: XMTP chat only in accepted 1v1 VS (
+ * Step 5).
+ * No dependency on `@xmtp/browser-sdk` (safe for tests / light server imports).
  */
 
 import type { VSData } from "@/lib/contract";
@@ -9,29 +10,29 @@ import { ZERO_ADDRESS } from "@/lib/constants";
 import { MOCK_CREATED_VS_ID } from "@/lib/mockVsCreate";
 import { SAMPLE_VS } from "@/lib/sampleVs";
 
-/** Ancla en `/vs/[id]` para enlazar desde el hub de mensajes. */
+/** Anchor on `/vs/[id=` to link from the messages hub. */
 export const VS_XMTP_CHAT_ANCHOR_ID = "proven-xmtp-vs-chat";
 
-/** VS de muestra (ids negativos en `SAMPLE_VS`): excluye hub / networking salvo demo 1v1 en detalle. */
+/** Sample VS (negative ids in `SAMPLE_VS`): excludes hub / networking except for the 1v1 demo in detail. */
 export function isSampleVsIdForXmtp(vsId: number): boolean {
   return vsId < 0 && Object.prototype.hasOwnProperty.call(SAMPLE_VS, vsId);
 }
 
 /**
- * Demo `/vs/create?demo=1` → ticket `-4`: apuesta 1v1 local (misma UX de panel que un VS real).
+ * Demo `/vs/create?demo=1` → ticket `-4`: local 1v1 bet (same panel UX as a real VS).
  */
 export function isOneVsOneDemoVs(vs: VSData): boolean {
   return vs.id === MOCK_CREATED_VS_ID && getVSConfiguredMaxChallengers(vs) === 1;
 }
 
-/** Montar `VsXmtpPanel` en `/vs/[id]`: on-chain o demo 1v1 (-4). */
+/** Mount `VsXmtpPanel` on `/vs/[id`: on-chain or 1v1 demo (-4). */
 export function shouldMountVsXmtpPanelOnDetailPage(vs: VSData): boolean {
   return vs.id >= 0 || isOneVsOneDemoVs(vs);
 }
 
 /**
- * Demo 1v1: si el rival no está en XMTP, mostrar maqueta del hilo (sin envío real).
- * Los VS on-chain siguen con el mensaje de error estándar + Reintentar.
+ * 1v1 demo: if the opponent is not on XMTP, show a thread mock (no real send).
+ * On-chain VSs still show the standard error message + Retry.
  */
 export function shouldShowXmtpPeerUnreachableChatPreview(
   vs: VSData,
@@ -40,14 +41,14 @@ export function shouldShowXmtpPeerUnreachableChatPreview(
   return isOneVsOneDemoVs(vs) && errorKind === "peer_unreachable";
 }
 
-/** Motivo por el que aún no hay chat XMTP en este VS (para copy en UI). */
+/** Reason why there is no XMTP chat yet in this VS (for UI copy). */
 export type VsXmtpChatUnavailableReason =
   | "sample"
   | "not_accepted"
   | "waiting_opponent"
   | "multi_challenger";
 
-/** VS en estado aceptado, con un solo rival y oponente on-chain definido. */
+/** VS in accepted state, with a single challenger and a defined on-chain opponent. */
 export function canOpenVsXmtpChat(vs: VSData): boolean {
   if (vs.state !== "accepted") return false;
   if (!vs.opponent || vs.opponent === ZERO_ADDRESS) return false;
@@ -56,8 +57,8 @@ export function canOpenVsXmtpChat(vs: VSData): boolean {
 }
 
 /**
- * Si el chat XMTP no está disponible, devuelve la razón; si está disponible, `null`.
- * No comprueba wallet: solo estado del VS.
+ * If XMTP chat is not available, returns the reason; if available, `null`.
+ * Does not check the wallet: only the VS state.
  */
 export function getVsXmtpUnavailableReason(
   vs: VSData
@@ -71,8 +72,9 @@ export function getVsXmtpUnavailableReason(
 }
 
 /**
- * Dirección de la contraparte en XMTP (la otra parte del 1v1).
- * `viewer` debe ser creator u opponent (comparación case-insensitive).
+ * Counterpart address on XMTP (
+ * the other side of the 1v1).
+ * `viewer` must be the creator or the opponent (case-insensitive comparison).
  */
 export function getVsXmtpPeerAddress(
   vs: VSData,

@@ -18,10 +18,12 @@ interface Particle {
 
 export default function Confetti({ active }: { active: boolean }) {
   const [particles, setParticles] = useState<Particle[]>([]);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  // Wait for the client preference before creating animated particles.
+  const [reducedMotion, setReducedMotion] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      setReducedMotion(false);
       return;
     }
 
@@ -35,14 +37,14 @@ export default function Confetti({ active }: { active: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (!active || reducedMotion) {
+    if (!active || reducedMotion !== false) {
       setParticles([]);
       return;
     }
     setParticles(
       Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
-        id,
-        left: `${Math.random() * 100}p%`,
+        id: i,
+        left: `${Math.random() * 100}%`,
         width: 5 + Math.random() * 10,
         height: 5 + Math.random() * 10,
         color: COLORS[i % COLORS.length],
@@ -53,7 +55,7 @@ export default function Confetti({ active }: { active: boolean }) {
     );
   }, [active, reducedMotion]);
 
-  if (!active || reducedMotion || particles.length === 0) return null;
+  if (!active || reducedMotion !== false || particles.length === 0) return null;
 
   return (
     <div

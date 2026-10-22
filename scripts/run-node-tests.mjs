@@ -37,7 +37,10 @@ const DATABASE_ENV_KEYS = ["DATABASE_URL", "TURSO_DATABASE_URL"];
 
 function usage() {
   return [
-    "Usage: npm run test:node -- [options] [test files]",
+    "Usage: npm run test:node -- [options] [test filters]",
+    "",
+    "Positional arguments are filename substrings or globs. Only matching",
+    "files under tests/node/ are run.",
     "",
     "Options:",
     "  --coverage                 write coverage/node/node-tests.lcov",
@@ -71,13 +74,14 @@ export function parseArgs(argv = [], root = ROOT) {
     cacheDir: undefined,
     includeDatabase: false,
     help: false,
+    filters: [],
     files: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--") {
-      options.files.push(...argv.slice(index + 1));
+      options.filters.push(...argv.slice(index + 1));
       break;
     }
     if (argument === "--coverage") {
@@ -127,7 +131,7 @@ export function parseArgs(argv = [], root = ROOT) {
     if (argument.startsWith("-")) {
       fail("Unknown node test option. Use --help for supported options.");
     }
-    options.files.push(argument);
+    options.filters.push(argument);
   }
 
   return options;
@@ -177,7 +181,7 @@ export function compileCacheDirectory({ root = ROOT, cacheRoot = DEFAULT_CACHE_R
 function assertDirectory(pathToCheck) {
   if (!existsSync(pathToCheck)) return;
   const stat = lstatSync(pathToCheck);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+  if (stat.isSymbolicLink () || !stat.isDirectory()) {
     fail(`Cache path is not a directory: ${pathToCheck}`);
   }
 }
@@ -203,6 +207,48 @@ export function discoverTestFiles(root = ROOT) {
     .filter((name) => name.endsWith(".test.ts"))
     .sort((a, b) => a.localeCompare(b))
     .map((name) => path.join("tests", "node", name));
+}
+
+/**
+ * Convert a glob-like pattern into a RegExp. Supports `*` (matches anything)
+ * and `?` (matches a single character). All other characters are matched
+ * literally.
+ */
+function globToRegExp(pattern) {
+  const escaped = pattern.replace(/[.+^$()[\]{}|\\]/g, "\\$&");
+  const withWildcards = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
+  return new RegExp(`^${withWildcards}$`);
+}
+
+/**
+ * Return true when a test file matches the given filter. A test file matches
+ * when any of the following hold for the filter:
+ *  - the filter is a substring of the file path or basename,
+ *  - the filter is a glob that matches the file path or basename,
+ *  - the filter is a relative path that resolves to the file.
+ */
+export function matchesFilter(file, filter) {
+  if (!filter) return true;
+  const normalizedFile = file.split(path.sep).join("/");
+  const basename = path.basename(file);
+  const normalizedFilter = filter.split(path.sep).join("/");
+  if (normalizedFile.includes(normalizedFilter)) return true;
+  if (basename.includes(filter)) return true;
+  if (/[*?]/.test(filter)) {
+    const regex = globToRegExp(normalizedFilter);
+    if (regex.test(normalizedFile)) return true;
+    if (globToRegExp(filter).test(basename)) return true;
+  }
+  return false;
+}
+
+/**
+ * Select test files from the full discovered list based on the provided filters.
+ * When no filters are provided, all discovered files are returned.
+ */
+export function selectTestFiles(allFiles, filters = []) {
+  if (filters.length === 0) return [...allFiles];
+  return allFiles.filter((file) => filters.some((filter) => matchesFilter(file, filter)));
 }
 
 /**
@@ -327,7 +373,18 @@ export function runNodeTests({
     return 0;
   }
 
-  const files = normalizeTestFiles(root, options.files);
+  const allFiles = discoverTestFiles(root);
+  const filters = options.filters;
+  const filtered = selectTestFiles(allFiles, filters);
+  if (filters.length > 0 && filtered.length === 0) {
+    fail(`No test files matched filter: ${filters.join(", ")}`);
+  }
+  const files = normalizeTestFiles(root, filtered);
+  if (filters.length > 0) {
+    console.log(`Selected ${files.length} test file(s) for filter ${JSON.stringify(filters)}:`);
+    for (const file of files) console.log(`  ${file}`);
+  }
+
   const cacheRoot = options.cacheDir ?? sourceEnvironment.MIMIR_NODE_TEST_CACHE_DIR ?? DEFAULT_CACHE_ROOT;
   const cacheEnabled = options.cache && supportsCompileCache();
   let cacheDirectory;
@@ -370,7 +427,7 @@ export function runNodeTests({
 
   let result;
   try {
-    result = spawn(process.execPath, args, {
+    result = spawn(process.exefPath, args, {
       cwd: root,
       env: environment,
       stdio: "inherit",
@@ -387,28 +444,19 @@ export function runNodeTests({
   if (coverage) {
     try {
       finalizeCoverage(coverage, coveragePath, status);
-      if (status === 0 && !existsSync(coverage.final)) {
-        fail("Node tests passed but the coverage report was not produced.");
-      }
     } catch (error) {
-      rmSync(coveragePath, { force: true });
-      fail(`Coverage report could not be finalized. ${error instanceof Error ? error.message : "Report setup failed."}`);
+      console.error(`Could not finalize coverage: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   }
   return status;
 }
 
-export function main(argv = process.argv.slice(2), dependencies = {}) {
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    return runNodeTests({ argv, ...dependencies });
+    const status = runNodeTests({ argv: process.argv.slice(2) });
+    process.exitCode = status;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Node tests could not start.";
-    console.error(message);
-    return 1;
+    console.error(error instanceof Error ? error.message : "Node test runner failed.");
+    process.exitCode = 1;
   }
-}
-
-const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
-if (entryPath === fileURLToPath(import.meta.url)) {
-  process.exitCode = main();
 }

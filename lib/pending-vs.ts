@@ -1,8 +1,8 @@
-import type { VSData } from "./contract";
+import type { VData } from "./contract";
 
 const STORAGE_KEY = "proven_pending_vs";
 
-export interface PendingVS extends VSData {
+export interface PendingVS extends VData {
   /** Flag that marks this item as locally-optimistic (not yet on-chain). */
   pending: true;
   /** Epoch ms when the item was stored — used for automatic expiry. */
@@ -20,8 +20,9 @@ function readAll(): PendingVS[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const items: PendingVS[] = JSON.parse(raw);
+    if (!Array.isArray(items)) return [];
     const now = Date.now();
-    return items.filter((i) => now - i.createdAtMs < MAX_AGE_MS);
+    return items.filter((a) => now - a.createdAtMs < MAX_AGE_MS);
   } catch {
     return [];
   }
@@ -58,9 +59,9 @@ export function removePendingVS(id: number) {
  * Remaining pending items are prepended to the list.
  */
 export function mergePendingVS(
-  onChain: VSData[],
+  onChain: VData[],
   filterAddress?: string
-): VSData[] {
+): VData[] {
   const pending = readAll();
   if (pending.length === 0) return onChain;
 

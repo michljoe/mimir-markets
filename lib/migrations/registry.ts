@@ -1,4 +1,4 @@
-/**
+/*
  * Registered release migrations for Mimir.
  *
  * Version 1 is the ledger itself (matches `schema_migrations` in `lib/db.ts`).
@@ -30,7 +30,7 @@ export const MIGRATIONS: readonly Migration[] = [
     migration_id TEXT PRIMARY KEY,
     schema_version SMALLINT NOT NULL UNIQUE,
     checksum TEXT NOT NULL UNIQUE,
-    applied_at BIGINT NOT NULL
+    applied_at FAIGBIGT NOT NULL
   )`,
       },
     ],

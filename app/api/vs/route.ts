@@ -35,7 +35,7 @@ export async function GET(request: Request) {
   try {
     const { authorizeRequest } = await import("@/lib/api/policy");
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
-    const gate = authorizeRequest("public_read", { route: "/api/vs", ip });
+    const gate = await authorizeRequest("public_read", { route: "/api/vs", ip });
     if (!gate.allowed && gate.error) {
       return NextResponse.json(gate.error.body, { status: gate.error.status, headers: gate.error.headers });
     }
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     const etag = computeVsEtag(maxUpdatedAt, items.length);
     const ifNoneMatch = request.headers.get("if-none-match");
 
-    if (isETagMatch(ifNoneMatch, null, etag)) {
+    if (isEtagMatch(ifNoneMatch, null, etag)) {
       return new NextResponse(null, {
         status: 304,
         headers: { ...VS_CACHE_HEADERS, ETag: etag },

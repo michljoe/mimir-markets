@@ -30,6 +30,7 @@ import { useTranslations } from "next-intl";
 import { useWallet } from "@/lib/wallet";
 import { challengeClaim } from "@/lib/contract";
 import { evaluateUsdcTrustlineGate } from "@/lib/usdcTrustlineGate";
+import Link from "next/link";
 import {
   UsdcTrustlineGate,
   useUsdcTrustline,
@@ -44,6 +45,8 @@ interface Mirror {
   agentName: string;
   memberStakeUsdc: number;
   mirrorUsdc: number;
+  side?: string;
+  marketId?: string;
   weightBps: number;
   deadline: number;
 }
@@ -161,16 +164,14 @@ export function PendingMirrors() {
             {done[item.claimId] ? (
               <span className="font-mono text-[11px] text-pv-emerald">mirrored ✓</span>
             ) : (
-              <button
-                type="button"
-                onClick={() => void mirror(item)}
-                disabled={busyId !== null || blocked || !signer}
-                className="btn-compact-primary shrink-0 px-3 py-1.5 text-[12px] disabled:opacity-40"
+              <Link
+                href={`/vs/${item.claimId}?side=${encodeURIComponent(
+                  item.side ?? "yes",
+                )}&amount=${encodeURIComponent(item.mirrorUsdc.toFixed(2))}`}
+                className="btn-compact-primary shrink-0 px-3 py-1.5 text-[12px]"
               >
-                {busyId === item.claimId
-                  ? "Confirm in wallet…"
-                  : `Mirror ${item.mirrorUsdc.toFixed(2)} USDC`}
-              </button>
+                Mirror {item.mirrorUsdc.toFixed(2)} USDC
+              </Link>
             )}
           </li>
         ))}

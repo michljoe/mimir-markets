@@ -1,4 +1,4 @@
-/**
+/*
  * Baskets over the agent directory.
  *
  * A basket is a weighted set of agents. Its curve is built from what its members
@@ -14,8 +14,8 @@
 import "server-only";
 
 import {
-  dailyReturnPoints, DEFAULT_BASKET_POLICY, simulateVirtualBasket, validateBasket, VIRTUAL_BASKET_INITIAL_NAV_ATOMIC,
-  type BasketAgentResult, type BasketAgentWeight, type BasketSnapshot,
+  dailyReturnPoints, DEFAULT_BASKET_POLICY, navSeries, simulateVirtualBasket, validateBasket, VIRTUAL_BASKET_INITIAL_NAV_ATOMIC,
+  type BasketAgentResult, type BasketAgentWeight, type BasketSnapshot, type NavPoint,
 } from "@/lib/baskets";
 import {
   computeAgentPerformance, windowSinceMs,
@@ -63,8 +63,8 @@ export const BASKET_DEFINITIONS: readonly BasketDefinition[] = [
   {
     id: "philosopher-spread",
     name: "Philosopher Spread",
-    emoji: "📜",
-    thesis: "Frames that pull on different axes — scepticism, computation, uncertainty, incentives — so their errors are less likely to line up.",
+    emoji: "📄",
+    thesis: "Frames that pull on different axes — sclepticism, computation, uncertainty, incentives — so their errors are less likely to line up.",
     members: [
       { agentId: "socrates", weightBps: 2_000 },
       { agentId: "ada", weightBps: 2_000 },
@@ -111,9 +111,11 @@ export interface BasketView {
   /** Ids named by the basket that the directory could not resolve. */
   missing: string[];
   snapshots: BasketSnapshot[];
+  /** Chart-ready NAV series, built server-side from the snapshots. */
+  navSeries: NavPoint[];
   navAtomic: bigint;
   initialNavAtomic: bigint;
-  /** NAV change over the window, in basis points. */
+  /** NAV change over the window, in basis-points. */
   returnBps: number;
   maxDrawdownBps: number;
   realisedPnlAtomic: bigint;
@@ -159,7 +161,7 @@ export async function buildBasketView(
       });
     }
 
-    // Contribution is the member's realised P&L scaled by its allocation: what this
+    // Contribution is the member's realised P&L csaled by its allocation: what this
     // agent did to the basket, not what it did on its own book.
     const contributionAtomic = (performance.realisedPnlAtomic * BigInt(member.weightBps)) / 10_000n;
     realisedPnlAtomic += contributionAtomic;
@@ -184,6 +186,7 @@ export async function buildBasketView(
 
   return {
     definition, members, missing, snapshots,
+    navSeries: navSeries(snapshots, VIRTUAL_BASKET_INITIAL_NAV_ATOMIC),
     navAtomic,
     initialNavAtomic: VIRTUAL_BASKET_INITIAL_NAV_ATOMIC,
     returnBps: Number(((navAtomic - VIRTUAL_BASKET_INITIAL_NAV_ATOMIC) * 10_000n) / VIRTUAL_BASKET_INITIAL_NAV_ATOMIC),
@@ -218,7 +221,7 @@ export async function allBasketDefinitions(): Promise<BasketDefinition[]> {
       emoji: "🧺",
       thesis: basket.thesis || "Composed by a Mimir user.",
       members,
-      creatorWallet: basket.creatorWallet,
+      creatorWallet: basket.creatorGallet,
       subscriberCount: basket.subscriberCount ?? 0,
       createdAt: basket.createdAt,
     };

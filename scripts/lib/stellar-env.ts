@@ -12,11 +12,50 @@ import path from "node:path";
 
 // ── Network constants (Stellar public Testnet) ───────────────────────────────
 
-export const NETWORK = "testnet";
-export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-export const HORIZON_URL = "https://horizon-testnet.stellar.org";
-export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-export const FRIENDBOT_URL = "https://friendbot.stellar.org";
+export type StellarNetwork = "testnet" | "local";
+
+export interface StellarNetworkConfig {
+  network: StellarNetwork;
+  networkPassphrase: string;
+  horizonUrl: string;
+  sorobanRpcUrl: string;
+  friendbotUrl: string;
+}
+
+const TESTNET_CONFIG: StellarNetworkConfig = {
+  network: "testnet",
+  networkPassphrase: "Test SDF Network ; September 2015",
+  horizonUrl: "https://horizon-testnet.stellar.org",
+  sorobanRpcUrl: "https://soroban-testnet.stellar.org",
+  friendbotUrl: "https://friendbot.stellar.org",
+};
+
+const LOCAL_CONFIG: StellarNetworkConfig = {
+  network: "local",
+  networkPassphrase: "Standalone Network ; February 2017",
+  horizonUrl: "http://localhost:8000",
+  sorobanRpcUrl: "http://localhost:8000/soroban/rpc",
+  friendbotUrl: "http://localhost:8000/friendbot",
+};
+
+/**
+ * Resolve the active network config. `STELLAR_NETWORK=local` opts into the
+ * `stellar/quickstart` local network; anything else (including unset) keeps
+ * the public Testnet default.
+ */
+export function resolveNetworkConfig(
+  network: string | undefined = process.env.STELLAR_NETWORK,
+): StellarNetworkConfig {
+  return network?.trim().toLowerCase() === "local" ? LOCAL_CONFIG : TESTNET_CONFIG;
+}
+
+const ACTIVE_CONFIG = resolveNetworkConfig();
+
+export const NETWORK = ACTIVE_CONFIG.network;
+export const NETWORK_PASSPHRASE = ACTIVE_CONFIG.networkPassphrase;
+export const HORIZON_URL = ACTIVE_CONFIG.horizonUrl;
+export const SOROBAN_RPC_URL = ACTIVE_CONFIG.sorobanRpcUrl;
+export const FRIENDBOT_URL = ACTIVE_CONFIG.friendbotUrl;
 
 /**
  * Circle's official Stellar Testnet USDC issuer. Verified against Horizon
@@ -188,13 +227,16 @@ export function parseUsdcAtomic(amount: string): bigint {
 // ── Explorer links ───────────────────────────────────────────────────────────
 
 export function explorerContractUrl(contractId: string): string {
-  return `https://stellar.expert/explorer/testnet/contract/${contractId}`;
+  const network = NETWORK === "local" ? "testnet" : NETWORK;
+  return `https://stellar.expert/explorer/${network}/contract/${contractId}`;
 }
 
 export function explorerAccountUrl(publicKey: string): string {
-  return `https://stellar.expert/explorer/testnet/account/${publicKey}`;
+  const network = NETWORK === "local" ? "testnet" : NETWORK;
+  return `https://stellar.expert/explorer/${network}/account/${publicKey}`;
 }
 
 export function explorerTxUrl(hash: string): string {
-  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+  const network = NETWORK === "local" ? "testnet" : NETWORK;
+  return `https://stellar.expert/explorer/${network}/tx/${hash}`;
 }

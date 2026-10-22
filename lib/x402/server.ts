@@ -148,6 +148,15 @@ export interface PaidRouteOptions {
   payTo?: DynamicPayTo;
   /** Skip the paywall entirely (e.g. a valid council pass). */
   skipPayment?: (req: NextRequest) => Promise<boolean> | boolean;
+  /**
+   * Refuse a request before the paywall quotes a 402.
+   *
+   * A dynamic `payTo` that cannot resolve — a council persona with a missing or
+   * malformed `COUNCIL_<SLUG>_PUBLIC` — must not produce a quote: the buyer would
+   * pay into an address nobody controls. Returning a response short-circuits the
+   * request with that response (a 503, for the council routes); `null` continues.
+   */
+  beforeQuote?: (req: NextRequest) => NextResponse | null | Promise<NextResponse | null>;
 }
 
 /**
@@ -218,6 +227,11 @@ export function paidRoute<T>(
         headers: paused.headers,
       }) as NextResponse<T>;
     }
+    // Before quoting: an unresolvable recipient is a configuration error, not a
+    // payment the buyer can complete. Refusing here means no 402 is ever issued
+    // for an address that failed validation.
+    const refusal = await opts.beforeQuote?.(req);
+    if (refusal) return refusal as NextResponse<T>;
     const { authorizeRequest } = await import("@/lib/api/policy");
     const { verifyBrowserOrigin } = await import("@/lib/api/origin");
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
@@ -229,7 +243,7 @@ export function paidRoute<T>(
     const mutatesValue = req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS";
     const originValid = verifyBrowserOrigin(req);
 
-    const rlGate = authorizeRequest(tier, {
+    const rlGate = await authorizeRequest(tier, {
       route: req.nextUrl.pathname,
       ip,
       wallet,

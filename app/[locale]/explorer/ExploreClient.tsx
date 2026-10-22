@@ -46,6 +46,7 @@ import ChallengeOpportunityCard from "@/components/explorer/ChallengeOpportunity
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import CacheFreshnessPill from "@/components/CacheFreshnessPill";
 import StaleIndexWarning from "@/components/StaleIndexWarning";
+import ExploreFilterBar from "@/components/explorer/ExploreFilterBar";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
 const SECONDS_PER_DAY = 86_400;

@@ -22,6 +22,7 @@ import { getSyncMeta, setSyncMeta, isDbConfigured } from "@/lib/db";
 import { pauseEnvKey, pauseState, type Pausable } from "./flags";
 
 import { currentTraceId, endSpan, mintTraceId, runWithTrace, startSpan } from "./trace";
+import { jitteredIntervalMs } from "./poll-jitter";
 
 import {
   decodeHeartbeat,
@@ -59,7 +60,12 @@ function windowKey(dependency: TrackedDependency): string {
  */
 export async function beat(
   worker: MonitoredWorker,
-  opts: { error?: unknown; intervalSec?: number; nowMs?: number } = {},
+  opts: {
+    error?: unknown;
+    intervalSec?: number;
+    nowMs?: number;
+    detail?: Record<string, unknown>;
+  } = {},
 ): Promise<void> {
   if (!isDbConfigured()) return;
   const nowMs = opts.nowMs ?? Date.now();
@@ -71,6 +77,7 @@ export async function beat(
         atMs: nowMs,
         error: opts.error ? describe(opts.error) : undefined,
         intervalSec: opts.intervalSec,
+        ...(opts.detail ? { detail: opts.detail } : {}),
         ...(traceId ? { traceId } : {}),
       }),
     );
@@ -103,7 +110,16 @@ export async function reportingPoll(
   label: string,
   intervalSec: number,
   poll: () => Promise<unknown>,
-  opts: { pause?: Pausable; env?: Record<string, string | undefined> } = {},
+  opts: {
+    pause?: Pausable;
+    env?: Record<string, string | undefined>;
+    /**
+     * Map a cycle's return value to a heartbeat error. Returning a value marks
+     * the cycle as failing even though `poll()` resolved — used when a worker
+     * swallows per-item errors and would otherwise beat as healthy.
+     */
+    errorFrom?: (result: unknown) => unknown;
+  } = {},
 ): Promise<void> {
   const traceId = mintTraceId();
   await runWithTrace({ traceId, source: "generated", worker }, async () => {
@@ -127,9 +143,19 @@ export async function reportingPoll(
     }
 
     try {
-      await poll();
-      endSpan(span, { status: "ok" });
-      await beat(worker, { intervalSec });
+      const result = await poll();
+      const derived = opts.errorFrom?.(result);
+      if (derived) {
+        console.error(
+          `[${label}] ${traceId} poll reported failure, will retry next interval:`,
+          derived,
+        );
+        endSpan(span, { error: derived });
+        await beat(worker, { error: derived, intervalSec, detail: detailOf(result) });
+      } else {
+        endSpan(span, { status: "ok" });
+        await beat(worker, { intervalSec, detail: detailOf(result) });
+      }
     } catch (err) {
       console.error(
         `[${label}] ${traceId} poll failed, will retry next interval:`,
@@ -139,6 +165,15 @@ export async function reportingPoll(
       await beat(worker, { error: err, intervalSec });
     }
   });
+}
+
+/**
+ * A cycle summary is a plain object; anything else is not reported as detail.
+ * Kept narrow so a worker returning a large payload cannot bloat the row.
+ */
+function detailOf(result: unknown): Record<string, unknown> | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
+  return result as Record<string, unknown>;
 }
 
 /**
@@ -165,6 +200,13 @@ export interface RunWorkerLoopOptions {
   worker: MonitoredWorker;
   /** Milliseconds to wait between the end of one cycle and the start of the next. */
   intervalMs: number;
+  /**
+   * ± milliseconds applied to each inter-cycle wait (see `poll-jitter.ts`).
+   * Omitted or 0 keeps fixed scheduling.
+   */
+  jitterMs?: number;
+  /** Uniform [0, 1) random source. Injectable so tests can seed the jitter. */
+  random?: () => number;
   /** One cycle. Errors are the caller's to swallow (e.g. `reportingPoll` does). */
   cycle: () => Promise<unknown>;
   /** Hard timeout before forcing exit on shutdown. Defaults to 30s. */
@@ -184,6 +226,8 @@ export async function runWorkerLoop(opts: RunWorkerLoopOptions): Promise<void> {
   const {
     worker,
     intervalMs,
+    jitterMs = 0,
+    random = Math.random,
     cycle,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
     process = globalThis.process,
@@ -193,13 +237,13 @@ export async function runWorkerLoop(opts: RunWorkerLoopOptions): Promise<void> {
     log = console,
   } = opts;
 
-  let sttopping = false;
+  let stopping = false;
   let hardTimeout: ReturnType<typeof setTimeout> | null = null;
   let sleepTimer: ReturnType<typeof setTimeout> | null = null;
   let sleepResolve: (() => void) | null = null;
 
   const onSignal = (signal: NodeJS.Signals) => {
-    if (sttopping) return;
+    if (stopping) return;
     stopping = true;
     log.info(`[${worker}] ${signal} received, finishing current cycle then exiting`);
     // Wake any pending inter-cycle sleep so the loop can observe the flag.
@@ -253,7 +297,9 @@ export async function runWorkerLoop(opts: RunWorkerLoopOptions): Promise<void> {
         log.error(`[${worker}] cycle threw unexpectedly:`, err);
       }
       if (stopping) break;
-      await sleep(intervalMs);
+      // Recompute every cycle: a fixed offset would just re-synchronise the
+      // workers at interval ± the same constant.
+      await sleep(jitteredIntervalMs({ intervalMs, jitterMs, random }));
     }
   } finally {
     for (const sig of signals) process.off(sig, onSignal);

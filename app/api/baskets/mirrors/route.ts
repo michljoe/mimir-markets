@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const rawSubscriber = req.nextUrl.searchParams.get("subscriber") ?? "";
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const gate = authorizeRequest("public_read", { route: "/api/baskets/mirrors", ip });
+  const gate = await authorizeRequest("public_read", { route: "/api/baskets/mirrors", ip });
   if (!gate.allowed && gate.error) {
     return NextResponse.json(gate.error.body, { status: gate.error.status, headers: gate.error.headers });
   }

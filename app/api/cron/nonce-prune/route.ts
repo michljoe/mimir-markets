@@ -16,14 +16,14 @@
 import { NextResponse } from "next/server";
 import { authorizeRequest } from "@/lib/api/policy";
 import { pruneExpiredNonces } from "@/lib/server/nonce-store";
-import { pruneExpiredRateLimitWindows } from "@/lib/api/rate-limit";
+import { pruneRateLimits } from "@/lib/api/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-function authorizeWorker(request: Request, route: string) {
+async function authorizeWorker(request: Request, route: string) {
   const header = request.headers.get("authorization") ?? "";
   const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  return authorizeRequest("internal_worker", {
+  return await authorizeRequest("internal_worker", {
     route,
     presentedSecret: presented,
     expectedSecret: process.env.CRON_SECRET,
@@ -31,7 +31,7 @@ function authorizeWorker(request: Request, route: string) {
 }
 
 export async function GET(request: Request) {
-  const auth = authorizeWorker(request, "/api/cron/nonce-prune");
+  const auth = await authorizeWorker(request, "/api/cron/nonce-prune");
   if (!auth.allowed && auth.error) {
     return NextResponse.json(auth.error.body, {
       status: auth.error.status,
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
   try {
     const pruned = await pruneExpiredNonces();
-    const rateLimitWindowsPruned = await pruneExpiredRateLimitWindows();
+    const rateLimitWindowsPruned = await pruneRateLimits();
     return NextResponse.json(
       { pruned, rateLimitWindowsPruned, at: Date.now() },
       { headers: { "Cache-Control": "no-store" } },

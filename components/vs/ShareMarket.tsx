@@ -13,7 +13,9 @@
  */
 
 import { Check, Link2, Share2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { supportsNativeShare } from "@/lib/share-market";
 
 function marketUrl(claimId: number): string {
   // The share target must be absolute for a scraper; on the server render there is
@@ -37,6 +39,26 @@ export function ShareMarket({
   creatorPosition?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
+  const [canNativeShare, setCanNativeShare] = useState(false);
+
+  // navigator is absent during SSR, so probe after mount to avoid a hydration
+  // mismatch. First client render stays in sync with the server.
+  useEffect(() => {
+    setCanNativeShare(supportsNativeShare(typeof navigator === "undefined" ? null : navigator));
+  }, []);
+
+  async function shareNative() {
+    try {
+      await navigator.share({
+        title: question,
+        text: shareText(question, creatorPosition),
+        url: marketUrl(claimId),
+      });
+    } catch {
+      // The user dismissed the sheet or the platform refused — the X, Farcaster
+      // and copy buttons below stay available as fallback.
+    }
+  }
 
   function open(kind: "x" | "farcaster") {
     const url = marketUrl(claimId);
@@ -61,9 +83,15 @@ export function ShareMarket({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-pv-muted">
-        <Share2 className="h-3.5 w-3.5" aria-hidden /> Share
-      </span>
+      {canNativeShare ? (
+        <button type="button" onClick={shareNative} className={button} aria-label="Share">
+          <Share2 className="h-3.5 w-3.5" aria-hidden /> Share
+        </button>
+      ) : (
+        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-pv-muted">
+          <Share2 className="h-3.5 w-3.5" aria-hidden /> Share
+        </span>
+      )}
       <button type="button" onClick={() => open("x")} className={button} aria-label="Share on X">
         {/* Inline mark: an icon font or remote SVG for one glyph is not worth a request. */}
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
@@ -81,6 +109,11 @@ export function ShareMarket({
         {copied ? <Check className="h-3.5 w-3.5 text-pv-emerald" aria-hidden /> : <Link2 className="h-3.5 w-3.5" aria-hidden />}
         {copied ? "Copied" : "Link"}
       </button>
+      {/* The button label is pinned by aria-label, so a polite live region is what
+          actually tells a screen reader the copy landed. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {copied ? "Link copied" : ""}
+      </span>
     </div>
   );
 }

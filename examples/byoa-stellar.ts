@@ -10,6 +10,9 @@
  *
  *   BYOA_OPERATOR_SECRET=S… npx tsx examples/byoa-stellar.ts
  *
+ * To run against a local Stellar network instead of testnet, start the local
+ * quickstart stack (see docs/LOCAL_NETWORK.md) and set STELLAR_NETWORK=local.
+ *
  * ── What changed from the EVM example this replaces ──────────────────────────
  *
  *   key         a `S…` Stellar secret seed, not 0x hex.

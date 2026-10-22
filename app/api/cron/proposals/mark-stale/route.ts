@@ -18,7 +18,7 @@ const ROUTE = "/api/cron/proposals/mark-stale";
 export async function POST(request: Request): Promise<NextResponse> {
   const header = request.headers.get("authorization") ?? "";
   const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  const auth = authorizeRequest("internal_worker", {
+  const auth = await authorizeRequest("internal_worker", {
     route: ROUTE,
     presentedSecret: presented,
     expectedSecret: process.env.CRON_SECRET,

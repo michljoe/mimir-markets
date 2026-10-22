@@ -51,6 +51,7 @@ import {
   VS_DETAIL_POLL_INTERVAL_MS,
   VS_DETAIL_MAX_ATTEMPTS,
 } from "@/lib/vs-detail-state";
+import { getNextPollDelay } from "@/lib/poll-schedule";
 import type { VSData } from "@/lib/contract";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
@@ -167,6 +168,12 @@ export function useVsDetail({
   const [fetchAttempts, setFetchAttempts] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * Consecutive failure count used to back off the polling interval.
+   * Reset to 0 on every successful load.
+   */
+  const consecutiveFailuresRef = useRef(0);
+
   // ── Activity timeline ─────────────────────────────────────────────────────
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -217,6 +224,7 @@ export function useVsDetail({
       setVs(null);
       setCache(null);
       setFetchAttempts(0);
+      consecutiveFailuresRef.current = 0;
       setRefreshing(false);
       setPhase(isValidVsId(vsId) ? "loading" : "invalid");
       setActivity([]);
@@ -284,6 +292,7 @@ export function useVsDetail({
           });
           setCache(snapshot.cache ?? null);
           setFetchAttempts(0);
+          consecutiveFailuresRef.current = 0;
           setPhase("ready");
           setRefreshing(false);
           return;
@@ -295,6 +304,7 @@ export function useVsDetail({
           if (myGeneration !== generationRef.current) return;
           setVs(pending);
           setCache(null);
+          consecutiveFailuresRef.current = 0;
           setPhase("ready");
           setRefreshing(false);
           // Keep polling until on-chain data arrives.
@@ -315,6 +325,7 @@ export function useVsDetail({
       } catch {
         if (myGeneration !== generationRef.current) return;
         setRefreshing(false);
+        consecutiveFailuresRef.current += 1;
         setFetchAttempts((prev) => {
           const next = prev + 1;
           if (next >= VS_DETAIL_MAX_ATTEMPTS) {
@@ -351,6 +362,7 @@ export function useVsDetail({
       }
       const body = (await res.json()) as { rows?: ActivityRow[] };
       setActivity(Array.isArray(body.rows) ? body.rows : []);
+      consecutiveFailuresRef.current = 0;
     } catch (err) {
       setActivityError(err instanceof Error ? err.message : "activity fetch failed");
       setActivity([]);
@@ -379,17 +391,34 @@ export function useVsDetail({
 
     let eventSource: EventSource | null = null;
     let fallbackPollInterval: NodeJS.Timeout | null = null;
+    let fallbackPollTimeout: NodeJS.Timeout | null = null;
     let isCleanedUp = false;
 
     function startPollingFallback() {
       if (fallbackPollInterval || isCleanedUp) return;
-      fallbackPollInterval = setInterval(() => {
-        if (document.visibilityState === "hidden") return;
-        void fetchVs();
-      }, VS_DETAIL_POLL_INTERVAL_MS);
+      const scheduleNext = () => {
+        if (isCleanedUp) return;
+        const delay = getNextPollDelay(
+          VS_DETAIL_POLL_INTERVAL_MS,
+          consecutiveFailuresRef.current
+        );
+        fallbackPollTimeout = setTimeout(() => {
+          fallbackPollTimeout = null;
+          if (document.visibilityState === "hidden") {
+            scheduleNext();
+            return;
+          }
+          void fetchVs().finally(scheduleNext);
+        }, delay);
+      };
+      scheduleNext();
     }
 
     function stopPollingFallback() {
+      if (fallbackPollTimeout) {
+        clearTimeout(fallbackPollTimeout);
+        fallbackPollTimeout = null;
+      }
       if (fallbackPollInterval) {
         clearInterval(fallbackPollInterval);
         fallbackPollInterval = null;

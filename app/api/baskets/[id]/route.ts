@@ -78,7 +78,7 @@ export async function PATCH(
 ) {
   const { id } = await context.params;
 
-  const gate = authorizeRequest("public_read", { route: "/api/baskets/transfer", ip: clientIp(req) });
+  const gate = await authorizeRequest("public_read", { route: "/api/baskets/transfer", ip: clientIp(req) });
   if (!gate.allowed && gate.error) {
     return NextResponse.json(gate.error.body, { status: gate.error.status, headers: gate.error.headers });
   }

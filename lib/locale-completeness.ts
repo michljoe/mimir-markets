@@ -21,6 +21,7 @@
  *   home        — agent-wallet / x402 payment CTAs on the landing page
  *   create      — stake-input, fee disclosure, settlement-mode labels
  *   vsDetail    — payout card, fee breakdown, settlement receipt
+ *   liveDeadline — phase labels and countdown copy for the deadline widget
  *
  * No network calls, no filesystem access at runtime — callers load the JSON
  * and pass it in.  This keeps the module testable without mocks.
@@ -75,6 +76,7 @@ export const FUNDED_NAMESPACES: ReadonlySet<string> = new Set([
   "create",    // stake input, fee disclosure, settlement-mode labels
   "dashboard", // copy-trading controls, portfolio value
   "home",      // agent-wallet / x402 CTAs on the landing page
+  "liveDeadline", // phase labels + countdown copy for the deadline widget
   "vsDetail",  // payout card, fee breakdown, settlement receipt
   "wallet",    // USDC trust-line gate, balance display
 ]);

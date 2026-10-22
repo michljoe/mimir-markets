@@ -11,7 +11,7 @@
  * settlement on stellar.expert — the ledger is the ultimate source of truth.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { shortenAddress } from "@/lib/constants";
 import { getExplorerTxUrl } from "@/lib/stellar";
@@ -81,27 +81,113 @@ function ReceiptLink({ txHash }: { txHash: string | null }) {
   return <span className="text-pv-muted/60">—</span>;
 }
 
+const BASE_INTERVAL_MS = 5_000;
+const MAX_INTERVAL_MS = 60_000;
+
+/**
+ * Compute the next poll delay given the current delay and consecutive failure
+ * count. Doubles on each failure, capped at MAX_INTERVAL_MS. Resets to the
+ * base interval on success.
+ */
+export function nextPollDelay(currentMs: number, failures: number): number {
+  if (failures <= 0) return BASE_INTERVAL_MS;
+  return Math.min(currentMs * 2, MAX_INTERVAL_MS);
+}
+
+/**
+ * Background-safe polling loop. Invokes `tick` immediately, then on a
+ * self-rescheduling timer that:
+ *  - pauses while `document.visibilityState === "hidden"` (no requests fire),
+ *  - refreshes once when the tab becomes visible again,
+ *  - backs off on consecutive failures (see `nextPollDelay`).
+ *
+ * Returns a cleanup function that stops polling and removes listeners.
+ */
+export function startVisibilityAwarePolling(
+  tick: () => Promise<boolean>,
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let delay = BASE_INTERVAL_MS;
+  let failures = 0;
+
+  const schedule = () => {
+    if (stopped) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(run, delay);
+  };
+
+  const run = async () => {
+    if (stopped) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      // Paused: do not fire a request; re-check on visibilitychange.
+      return;
+    }
+    let ok = false;
+    try {
+      ok = await tick();
+    } catch {
+      ok = false;
+    }
+    if (stopped) return;
+    failures = ok ? 0 : failures + 1;
+    delay = nextPollDelay(delay, failures);
+    schedule();
+  };
+
+  const onVisibility = () => {
+    if (stopped) return;
+    if (document.visibilityState === "visible") {
+      // Refresh once on return, then resume the schedule.
+      if (timer) clearTimeout(timer);
+      timer = null;
+      void run();
+    } else if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibility);
+  }
+  void run();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibility);
+    }
+  };
+}
+
 export default function RevenuePage() {
   const [data, setData] = useState<RevenueSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    const load = async (): Promise<boolean> => {
       try {
         const res = await fetch("/api/payments/revenue");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as RevenueSummary;
-        if (alive) setData(json);
+        if (alive) {
+          setData(json);
+          setErr(null);
+        }
+        return true;
       } catch (e) {
         if (alive) setErr(e instanceof Error ? e.message : "failed to load");
+        return false;
       }
     };
-    load();
-    const t = setInterval(load, 5_000);
+    const stop = startVisibilityAwarePolling(load);
     return () => {
       alive = false;
-      clearInterval(t);
+      stop();
     };
   }, []);
 

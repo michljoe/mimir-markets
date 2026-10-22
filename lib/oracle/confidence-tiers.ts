@@ -43,6 +43,17 @@ export const CONFIDENCE_MED_MIN = 60;  // 60–79 : settle, marked contested
  */
 export const MAX_CONFIDENCE_NON_API = 75;
 
+/**
+ * Cap applied when fetched evidence looks like a prompt-injection attempt
+ * (see looksLikeSourceInjection in lib/prompt-safety.ts). Reuses the non-API
+ * ceiling so injected evidence can never reach the high tier, matching the
+ * trust already withheld from scraped, non-deterministic sources.
+ */
+export const MAX_CONFIDENCE_INJECTION = MAX_CONFIDENCE_NON_API;
+
+/** Audit tag appended when evidence tripped the injection heuristic. */
+export const INJECTION_EVIDENCE_TAG = "[injection-suspected]";
+
 /** The contract summary field is capped to 500 chars, as before. */
 export const MAX_EXPLANATION_CHARS = 500;
 
@@ -98,5 +109,24 @@ export function applyFetcherTrust(
     ...verdict,
     confidence: cappedConfidence,
     explanation: tagged(tag, verdict.explanation),
+  };
+}
+
+/**
+ * Cap confidence when the evidence text looks like an injection attempt.
+ * Pure: returns a new payload (or the same one when nothing changes) and never
+ * mutates its input. UNRESOLVABLE verdicts pass through untouched, matching
+ * applyFetcherTrust.
+ */
+export function applyInjectionTrust(
+  verdict: VerdictPayload,
+  looksLikeInjection: boolean,
+): VerdictPayload {
+  if (!looksLikeInjection) return verdict;
+  if (verdict.verdict === "UNRESOLVABLE") return verdict;
+  return {
+    ...verdict,
+    confidence: Math.min(verdict.confidence, MAX_CONFIDENCE_INJECTION),
+    explanation: tagged(INJECTION_EVIDENCE_TAG, verdict.explanation),
   };
 }

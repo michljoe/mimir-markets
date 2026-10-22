@@ -8,7 +8,8 @@
  *   2. Contract artifact provenance manifest and pins (fail-closed in release mode).
  *   3. Incident pause kill-switch state across all pausable capabilities.
  *   4. Critical non-pausable invariants (withdrawals and read paths always up).
- *   5. Privacy-safe telemetry (guaranteeing zero secret leakage).
+ *   5. Council payout addresses (every voting persona has a public G... account).
+ *   6. Privacy-safe telemetry (guaranteeing zero secret leakage).
  *
  * Usage:
  *   npx tsx scripts/verify-operational-status.ts
@@ -130,7 +131,30 @@ export function runOperationalVerification(
     pass("Capabilities: all 9 pausable capabilities active");
   }
 
-  // 6. Privacy & Secret Safety
+  // 6. Council Payout Configuration
+  //
+  // A persona whose `_PUBLIC` variable is missing or malformed cannot quote a
+  // 402 (the paid council routes return 503). In release mode that is a deploy
+  // blocker; in develop it is a warning, since payments may not be enabled yet.
+  const payouts = report.configuration.councilPayouts;
+  const payoutDetails = payouts.problems
+    .map((entry) => `${entry.persona} (${entry.variable}: ${entry.problem})`)
+    .join(", ");
+  if (payouts.ok) {
+    pass(
+      `Council payouts: ${payouts.configured}/${payouts.votingPersonas} voting personas have a valid G... account`,
+    );
+  } else if (options.mode === "release") {
+    fail(
+      `Council payouts: ${payouts.problems.length}/${payouts.votingPersonas} misconfigured — ${payoutDetails}`,
+    );
+  } else {
+    warn(
+      `Council payouts: ${payouts.problems.length}/${payouts.votingPersonas} misconfigured — ${payoutDetails}`,
+    );
+  }
+
+  // 7. Privacy & Secret Safety
   const serialized = JSON.stringify(report);
   const secretPattern = /S[A-Z2-7]{55}|(postgres|postgresql):\/\/[^@\s]+@[^\s"']+/i;
   if (secretPattern.test(serialized)) {

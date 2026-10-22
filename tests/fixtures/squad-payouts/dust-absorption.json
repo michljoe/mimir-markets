@@ -1,0 +1,15 @@
+{
+  "description": "Three equal winners split a losing pool of 1000 that does not divide evenly; the last claimant absorbs the remainder dust.",
+  "winners": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "depositAtomic": "1000" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "1000" },
+    { "participant": "GCLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "1000" }
+  ],
+  "losingPoolAtomic": "1000",
+  "feeBps": 0,
+  "expected": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "1333" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "netAtomic": "1333" },
+    { "participant": "GCLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "1334" }
+  ]
+}

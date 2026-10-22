@@ -87,7 +87,14 @@ const STUBS = {
   // next/server — used by lib/x402/server.ts (not under test here, but
   // transitively imported)
   "next/server": {
-    NextResponse: { json: (body, init) => ({ body, ...init }) },
+    NextResponse: class NextResponse extends Response {
+      static json(body, init) {
+        return new Response(JSON.stringify(body), {
+          ...init,
+          headers: { "content-type": "application/json", ...init?.headers },
+        });
+      }
+    },
   },
 };
 

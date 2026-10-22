@@ -13,8 +13,8 @@ import { NextRequest } from "next/server";
  * 'registered_agent' tier with signed actions instead.
  */
 
-test("positive: browser-origin policy enforces exact origin match for mutating user requests", () => {
-  const result = authorizeRequest("authenticated_user", {
+test("positive: browser-origin policy enforces exact origin match for mutating user requests", async () => {
+  const result = await authorizeRequest("authenticated_user", {
     route: "/api/test",
     mutatesValue: true,
     wallet: "GABC",
@@ -24,8 +24,8 @@ test("positive: browser-origin policy enforces exact origin match for mutating u
   assert.equal(result.allowed, true);
 });
 
-test("negative: mutating request fails if origin is invalid or cross-origin", () => {
-  const result = authorizeRequest("authenticated_user", {
+test("negative: mutating request fails if origin is invalid or cross-origin", async () => {
+  const result = await authorizeRequest("authenticated_user", {
     route: "/api/test",
     mutatesValue: true,
     wallet: "GABC",
@@ -37,16 +37,16 @@ test("negative: mutating request fails if origin is invalid or cross-origin", ()
   assert.match(result.error?.body.error.message ?? "", /cross-origin mutations are not allowed/);
 });
 
-test("boundary: public read requests do not require origin validation even from browser", () => {
-  const result = authorizeRequest("public_read", {
+test("boundary: public read requests do not require origin validation even from browser", async () => {
+  const result = await authorizeRequest("public_read", {
     route: "/api/test",
     mutatesValue: false,
   });
   assert.equal(result.allowed, true);
 });
 
-test("boundary: signed agent actions bypass browser-origin checks", () => {
-  const result = authorizeRequest("registered_agent", {
+test("boundary: signed agent actions bypass browser-origin checks", async () => {
+  const result = await authorizeRequest("registered_agent", {
     route: "/api/test",
     mutatesValue: true,
     wallet: "GABC",
@@ -59,7 +59,7 @@ test("boundary: signed agent actions bypass browser-origin checks", () => {
   assert.equal(result.allowed, true);
 });
 
-test("regression: verifyBrowserOrigin rejects mismatched origins", () => {
+test("regression: verifyBrowserOrigin rejects mismatched origins", async () => {
   // Mock NextRequest for identical host/origin
   const reqMatch = new NextRequest("http://mimir.example.com/api/test", {
     method: "POST",

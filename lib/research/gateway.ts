@@ -114,7 +114,7 @@ export function defaultAgentBudget(): AgentBudget {
 
 function currentUsage(agentId: string, now: number): BudgetUsage {
   const existing = usage.get(agentId);
-  if (!existing || now - existing.windowStartedAt > BUDGET_WINDOW_MS) {
+  if (!existing || now - existing.windowStartedAt >= BUDGET_WINDOW_MS) {
     const fresh = { requests: 0, bytes: 0, windowStartedAt: now };
     usage.set(agentId, fresh);
     return fresh;

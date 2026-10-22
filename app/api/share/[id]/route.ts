@@ -12,13 +12,29 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { readClaimRaw } from "@/lib/contract";
+import { readClaimRaw, type ClaimData } from "@/lib/contract";
 import { toCanonicalMode } from "@/lib/market-modes";
-import { buildShareCard, isCardSize, type ShareCard, type ShareCardLocale } from "@/lib/share-card";
+import { buildShareCard, isCardSize, type ShareCard, type ShareCardLocale, type ShareCardInput } from "@/lib/share-card";
 import { capture } from "@/lib/analytics/server";
 import { idempotencyKey } from "@/lib/analytics/events";
 
 export const dynamic = "force-dynamic";
+
+export interface ShareRouteDeps {
+  readClaim?: (claimId: number) => Promise<ClaimData | null>;
+  buildCard?: (input: ShareCardInput, size?: any) => ShareCard;
+}
+
+let claimLoaderOverride: ((claimId: number) => Promise<ClaimData | null>) | null = null;
+
+/**
+ * Test helper to stub the claim loader for GET /api/share/[id].
+ */
+export function setClaimLoaderForTesting(
+  loader: ((claimId: number) => Promise<ClaimData | null>) | null,
+): void {
+  claimLoaderOverride = loader;
+}
 
 /** XML-escape every interpolated string: claim text is user input. */
 function esc(text: string): string {
@@ -102,8 +118,9 @@ function renderSvg(card: ShareCard, claimId: number): string {
 }
 
 export async function GET(
-  req: NextRequest,
-  ctx: { params: Promise<{ id: string }> },
+  req: NextRequest | Request,
+  ctx: { params: Promise<{ id: string }> | { id: string } },
+  deps: ShareRouteDeps = {},
 ): Promise<NextResponse | Response> {
   const { id } = await ctx.params;
   const claimId = Number(id);
@@ -111,12 +128,15 @@ export async function GET(
     return NextResponse.json({ error: "invalid claim id" }, { status: 400 });
   }
 
-  const sizeParam = req.nextUrl.searchParams.get("size") ?? "og";
+  const searchParams =
+    "nextUrl" in req ? req.nextUrl.searchParams : new URL(req.url).searchParams;
+  const sizeParam = searchParams.get("size") ?? "og";
   const size = isCardSize(sizeParam) ? sizeParam : "og";
-  const localeParam = req.nextUrl.searchParams.get("locale");
+  const localeParam = searchParams.get("locale");
   const locale: ShareCardLocale = localeParam === "tr" ? "tr" : "en";
 
-  const claim = await readClaimRaw(claimId).catch(() => null);
+  const loader = deps.readClaim ?? claimLoaderOverride ?? readClaimRaw;
+  const claim = await loader(claimId).catch(() => null);
   if (!claim) {
     return NextResponse.json({ error: `claim ${claimId} not found` }, { status: 404 });
   }
@@ -127,7 +147,8 @@ export async function GET(
     maxChallengers: claim.max_challengers,
   });
 
-  const card = buildShareCard(
+  const cardBuilder = deps.buildCard ?? buildShareCard;
+  const card = cardBuilder(
     {
       claimId,
       question: claim.question,

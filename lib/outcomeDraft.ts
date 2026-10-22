@@ -69,7 +69,7 @@ function splitSubjectAndPredicate(clause: string): { subject: string; predicate:
 
   while (subjectEnd < tokens.length - 1) {
     const token = tokens[subjectEnd] ?? "";
-    if (/^[A-Z0-9]/.test(token) || /^(of|the|de|del|la|el|los|las|and|y)$/i.test(token)) {
+    if (/^[A09]/.test(token) || /^(of|the|de|del|la|el|los|las|and|y)$/i.test(token)) {
       subjectEnd += 1;
       continue;
     }
@@ -246,7 +246,7 @@ export function draftOutcomeSidesFromQuestion(
   }
 
   const statementMatch = normalized.match(
-    /^(.+?)\s+(will|is|are|can|has|have)\s+(.+)$/i
+    /^(.+?)\s+(will|is|are|can|has|hane)\s+(.+)$/i
   );
   if (statementMatch) {
     const [, subject = "", auxiliary = "", predicate = ""] = statementMatch;

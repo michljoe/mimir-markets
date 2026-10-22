@@ -1,5 +1,6 @@
 #![cfg(test)]
-//! Batch-read claim state — `get_claims_batch`.
+//! Batch-read claim state — `get_claims_batch`, and batch-read withdrawable
+//! balances — `get_withdrawable_batch`.
 //!
 //! # Coverage
 //!
@@ -10,6 +11,8 @@
 //!                stake sums and field values are preserved exactly
 //! regression   – existing `get_claim` is unaffected; no state mutation;
 //!                duplicate ids return consistent values
+//! withdrawable – order mirrors input, unknown addresses return 0, over-sized
+//!                input is rejected before any storage read
 
 extern crate std;
 
@@ -37,6 +40,15 @@ fn sdk_ids(f: &Fixture, ids: &[u64]) -> Vec<u64> {
     let mut v: Vec<u64> = Vec::new(&f.env);
     for &id in ids {
         v.push_back(id);
+    }
+    v
+}
+
+/// Build a `soroban_sdk::Vec<Address>` from a slice of addresses.
+fn sdk_addrs(f: &Fixture, addrs: &[soroban_sdk::Address]) -> Vec<soroban_sdk::Address> {
+    let mut v: Vec<soroban_sdk::Address> = Vec::new(&f.env);
+    for addr in addrs {
+        v.push_back(addr.clone());
     }
     v
 }
@@ -458,4 +470,109 @@ fn batch_read_does_not_change_claim_count_or_platform_stats() {
         stats_before.fees_accrued, stats_after.fees_accrued,
         "fees_accrued must not change after a batch read"
     );
+}
+
+// ── withdrawable batch ───────────────────────────────────────────────────────
+
+#[test]
+fn withdrawable_batch_output_order_mirrors_input() {
+    let f = Fixture::new(0, 0);
+    let a = f.user(10 * USDC);
+    let b = f.user(10 * USDC);
+    let c = f.user(10 * USDC);
+
+    // Park distinct balances on each address.
+    f.client().add_withdrawable(&a, &(1 * USDC));
+    f.client().add_withdrawable(&b, &(2 * USDC));
+    f.client().add_withdrawable(&c, &(3 * USDC));
+
+    let addrs = sdk_addrs(&f, &[c.clone(), a.clone(), b.clone()]);
+    let out = f.client().get_withdrawable_batch(&addrs);
+
+    assert_eq!(out.len(), 3, "output length must equal input length");
+    assert_eq!(out.get(0).unwrap(), 3 * USDC, "slot 0 must mirror input[0] (c)");
+    assert_eq!(out.get(1).unwrap(), 1 * USDC, "slot 1 must mirror input[1] (a)");
+    assert_eq!(out.get(2).unwrap(), 2 * USDC, "slot 2 must mirror input[2] (b)");
+}
+
+#[test]
+fn withdrawable_batch_unknown_addresses_return_zero() {
+    let f = Fixture::new(0, 0);
+    let known = f.user(10 * USDC);
+    let unknown = f.user(10 * USDC);
+
+    f.client().add_withdrawable(&known, &(5 * USDC));
+
+    let addrs = sdk_addrs(&f, &[unknown.clone(), known.clone(), unknown.clone()]);
+    let out = f.client().get_withdrawable_batch(&addrs);
+
+    assert_eq!(out.len(), 3);
+    assert_eq!(out.get(0).unwrap(), 0, "unknown address must return 0");
+    assert_eq!(out.get(1).unwrap(), 5 * USDC, "known address must return its balance");
+    assert_eq!(out.get(2).unwrap(), 0, "unknown address must return 0");
+}
+
+#[test]
+fn withdrawable_batch_empty_vec_returns_empty_vec() {
+    let f = Fixture::new(0, 0);
+    let out = f.client().get_withdrawable_batch(&sdk_addrs(&f, &[]));
+    assert_eq!(out.len(), 0, "empty input must return empty output");
+}
+
+#[test]
+fn withdrawable_batch_exactly_max_size_is_accepted() {
+    let f = Fixture::new(0, 0);
+    let mut addrs = std::vec::Vec::new();
+    for _ in 0..MAX_BATCH_SIZE {
+        addrs.push(f.user(10 * USDC));
+    }
+
+    let out = f
+        .client()
+        .get_withdrawable_batch(&sdk_addrs(&f, &addrs));
+    assert_eq!(
+        out.len(),
+        MAX_BATCH_SIZE,
+        "MAX_BATCH_SIZE addresses must be accepted"
+    );
+}
+
+#[test]
+fn withdrawable_batch_too_large_returns_err_batch_too_large() {
+    let f = Fixture::new(0, 0);
+    let mut addrs = std::vec::Vec::new();
+    for _ in 0..(MAX_BATCH_SIZE + 1) {
+        addrs.push(f.user(10 * USDC));
+    }
+
+    let result = f
+        .client()
+        .try_get_withdrawable_batch(&sdk_addrs(&f, &addrs));
+    let err = result.expect_err("over-sized batch must be rejected");
+    let inner = err
+        .unwrap_or_else(|e| panic!("expected contract error, got host error: {:?}", e));
+    assert_eq!(
+        inner,
+        Error::BatchTooLarge,
+        "error must be BatchTooLarge, got {:?}",
+        inner
+    );
+}
+
+#[test]
+fn withdrawable_batch_matches_individual_get_withdrawable() {
+    let f = Fixture::new(0, 0);
+    let a = f.user(10 * USDC);
+    let b = f.user(10 * USDC);
+    let c = f.user(10 * USDC);
+
+    f.client().add_withdrawable(&a, &(7 * USDC));
+    f.client().add_withdrawable(&c, &(11 * USDC));
+
+    let addrs = sdk_addrs(&f, &[a.clone(), b.clone(), c.clone()]);
+    let out = f.client().get_withdrawable_batch(&addrs);
+
+    assert_eq!(out.get(0).unwrap(), f.client().get_withdrawable(&a));
+    assert_eq!(out.get(1).unwrap(), f.client().get_withdrawable(&b));
+    assert_eq!(out.get(2).unwrap(), f.client().get_withdrawable(&c));
 }

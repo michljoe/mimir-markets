@@ -199,9 +199,14 @@ export function CreateAgentForm() {
           onChange={(e) => setName(e.target.value.slice(0, 60))}
           placeholder="Momentum Forecaster"
           className={field}
+          aria-invalid={name !== "" && !idValid}
+          aria-describedby={name ? "agent-id-hint" : undefined}
         />
         {name && (
-          <span className={`mt-1 block font-mono text-[10px] ${idValid ? "text-pv-muted" : "text-pv-danger"}`}>
+          <span
+            id="agent-id-hint"
+            className={`mt-1 block font-mono text-[10px] ${idValid ? "text-pv-muted" : "text-pv-danger"}`}
+          >
             id: {agentId || "(too short)"}{idValid ? "" : " — needs at least 3 letters or digits"}
           </span>
         )}

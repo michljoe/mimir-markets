@@ -186,4 +186,39 @@ export function ExplorerPanelSkeleton({ className = "" }: { className?: string }
   );
 }
 
+/** Stats page KPI strip, confidence/vault split, and feed placeholders. */
+export function StatsPanelSkeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`space-y-10 ${className}`}
+      aria-busy
+      aria-label="Loading stats"
+      role="status"
+    >
+      <span className="sr-only">Loading stats</span>
+      <div
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+        aria-hidden
+      >
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="space-y-2 rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-4"
+          >
+            <ShimmerBlock className="h-3 w-24" />
+            <ShimmerBlock className="h-7 w-20" />
+            <ShimmerBlock className="h-3 w-32 max-w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <AsyncPanelSkeleton label="Loading confidence distribution" />
+        <AsyncPanelSkeleton label="Loading agent vault" />
+      </div>
+      <AsyncPanelSkeleton label="Loading stakers" />
+      <AsyncPanelSkeleton label="Loading settlement timeline" />
+    </div>
+  );
+}
+
 export default AsyncPanelSkeleton;

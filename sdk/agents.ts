@@ -41,12 +41,51 @@ export interface MimirAgentSdkOptions {
   signMessage(message: string): Promise<string>;
   now?: () => number;
   nonce?: () => string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
+
+function combineSignals(signals: AbortSignal[]): AbortSignal {
+  if (signals.length === 0) {
+    return new AbortController().signal;
+  }
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(signals);
+  }
+  const controller = new AbortController();
+  const abort = (signal: AbortSignal) => {
+    controller.abort(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+  };
+  for (const signal of signals) {
+    if (signal.aborted) {
+      abort(signal);
+      break;
+    }
+    signal.addEventListener("abort", () => abort(signal), { once: true });
+  }
+  return controller.signal;
 }
 
 export class MimirAgentClient {
   constructor(private readonly options: MimirAgentSdkOptions) {}
 
-  async request<TBody, TResult>(action: AgentApiAction, body: TBody, idempotencyKey = crypto.randomUUID()): Promise<TResult> {
+  async request<TBody, TResult>(
+    action: AgentApiAction,
+    body: TBody,
+    idempotencyKeyOrSignal: string | AbortSignal = crypto.randomUUID(),
+    signal?: AbortSignal,
+  ): Promise<TResult> {
+    const idempotencyKey = typeof idempotencyKeyOrSignal === "string" ? idempotencyKeyOrSignal : crypto.randomUUID();
+    const requestSignal = typeof idempotencyKeyOrSignal === "object" && idempotencyKeyOrSignal instanceof AbortSignal
+      ? idempotencyKeyOrSignal
+      : signal;
+    const timeoutMs = this.options.timeoutMs ?? 15_000;
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort(new DOMException(`Request ${action} timed out after ${timeoutMs}ms`, "TimeoutError"));
+    }, timeoutMs);
+    const transport = this.options.fetch ?? fetch;
+    const combinedSignal = requestSignal ? combineSignals([requestSignal, timeoutController.signal]) : timeoutController.signal;
     const unsigned = {
       version: "v1" as const,
       agentId: this.options.agentId,
@@ -60,12 +99,27 @@ export class MimirAgentClient {
       ...unsigned,
       signature: await this.options.signMessage(agentRequestMessage(unsigned)),
     };
-    const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}/api/agents/v1/${action}`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.error?.message ?? `Mimir Agent API ${response.status}`);
-    return payload as TResult;
+
+    try {
+      const response = await transport(`${this.options.baseUrl.replace(/\/$/, "")}/api/agents/v1/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+        signal: combinedSignal,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message ?? `Mimir Agent API ${response.status}`);
+      return payload as TResult;
+    } catch (error) {
+      if (combinedSignal.reason instanceof DOMException && combinedSignal.reason.name === "TimeoutError") {
+        const timeoutError = new Error(`Request ${action} timed out after ${timeoutMs}ms`);
+        timeoutError.name = "TimeoutError";
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   heartbeat = () => this.request("heartbeat", {});

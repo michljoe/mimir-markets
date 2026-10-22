@@ -15,6 +15,11 @@
  *   - Every smoke run produces the same result on a clean checkout: same env,
  *     same fixtures, same assertions. No live credentials, no live network
  *     dependence in the app code under test.
+ *   - Visual regression snapshots (Playwright `toHaveScreenshot`) run against
+ *     the same deterministic server, so the fixture page and its snapshots
+ *     stay stable across consecutive CI runs. Update snapshots with
+ *     `npm run smoke:browser -- -- --update-snapshots` (or
+ *     `npx playwright test --update-snapshots` against a running server).
  *   - Failures are actionable: the run prints where to look (server log, Test
  *     Run summary) and what to rerun, and it never leaves a half-started server
  *     or a moved-env-file state behind.
@@ -312,6 +317,10 @@ async function main() {
 
       env.SMOKE_BASE_URL = addrFor(port);
       env.PLAYWRIGHT_HTML_OPEN = "never";
+      // Keep visual regression snapshots deterministic: fixed viewport, fonts
+      // and reduced motion are enforced by the Playwright config/specs, and
+      // the fixture route is only served when NODE_ENV !== "production".
+      env.SMOKE_VISUAL_FIXTURES = "1";
       exitCode = await runPlaywright(env, opts.playwrightArgs);
     });
   } catch (err) {

@@ -73,7 +73,7 @@ function parsePreviewInput(value: unknown, now: number): {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const gate = authorizeRequest("public_read", {
+  const gate = await authorizeRequest("public_read", {
     route: "/api/copy/preview",
     ip: req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
   });

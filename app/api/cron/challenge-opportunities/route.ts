@@ -15,10 +15,10 @@ export const maxDuration = 60;
  * string compare on a secret leaks its length through timing. The tier also
  * applies the route rate limit, which this route previously had none of.
  */
-function authorizeWorker(request: Request, route: string) {
+async function authorizeWorker(request: Request, route: string) {
   const header = request.headers.get("authorization") ?? "";
   const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  return authorizeRequest("internal_worker", {
+  return await authorizeRequest("internal_worker", {
     route,
     presentedSecret: presented,
     expectedSecret: process.env.CRON_SECRET,
@@ -27,7 +27,7 @@ function authorizeWorker(request: Request, route: string) {
 
 export async function GET(request: Request) {
   try {
-    const auth = authorizeWorker(request, "/api/cron/challenge-opportunities");
+    const auth = await authorizeWorker(request, "/api/cron/challenge-opportunities");
     if (!auth.allowed && auth.error) {
       // The tier's error already carries a machine-readable code, a retryable flag
       // and a Retry-After when waiting can help.

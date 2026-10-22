@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -127,4 +129,58 @@ test("stale marker fires after freshness window", () => {
   assert.equal(stillFresh.phase, "ready");
   const stale = markAsyncPanelStale(state, 50_000, 30_000);
   assert.equal(stale.phase, "stale");
+});
+
+test("stats panel preset lifecycle transitions from loading to ready and stale", () => {
+  let state = createAsyncPanelState("stats");
+  assert.equal(state.kind, "stats");
+  state = beginAsyncPanelLoad(state, {
+    key: "stats:summary",
+    generation: 1,
+    dependencyKey: "chain:ok",
+  });
+  assert.equal(state.phase, "loading");
+  assert.equal(shouldShowAsyncPanelSkeleton(state), true);
+
+  state = settleAsyncPanelLoad(state, {
+    requestKey: "stats:summary",
+    generation: 1,
+    atMs: 15_000,
+  });
+  assert.equal(state.phase, "ready");
+  assert.equal(shouldShowAsyncPanelSkeleton(state), false);
+
+  state = markAsyncPanelStale(state, 46_000, 30_000);
+  assert.equal(state.phase, "stale");
+});
+
+test("StatsPanelSkeleton and route loading/Suspense fallbacks are aria-busy and hide shimmer blocks", () => {
+  const root = process.cwd();
+  const skeletons = readFileSync(
+    join(root, "components", "ui", "AsyncPanelSkeleton.tsx"),
+    "utf8",
+  );
+  const statsLoading = readFileSync(
+    join(root, "app", "[locale]", "stats", "loading.tsx"),
+    "utf8",
+  );
+  const councilPage = readFileSync(
+    join(root, "app", "[locale]", "council", "page.tsx"),
+    "utf8",
+  );
+
+  // StatsPanelSkeleton preset is defined with aria-busy, status role, and aria-hidden shimmer blocks
+  assert.match(skeletons, /export function StatsPanelSkeleton/);
+  assert.match(skeletons, /aria-label="Loading stats"/);
+  assert.match(skeletons, /aria-busy/);
+  assert.match(skeletons, /aria-hidden/);
+
+  // /stats route loading renders StatsPanelSkeleton immediately
+  assert.match(statsLoading, /StatsPanelSkeleton/);
+
+  // /council wraps slow sub-sections in Suspense with aria-busy skeleton fallbacks while rendering header immediately
+  assert.match(councilPage, /<Suspense fallback=\{<CouncilSummarySkeleton \/>\}>/);
+  assert.match(councilPage, /<Suspense fallback=\{<CouncilGridSkeleton \/>\}>/);
+  assert.match(councilPage, /aria-busy/);
+  assert.match(councilPage, /aria-hidden/);
 });

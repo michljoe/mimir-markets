@@ -77,9 +77,9 @@ const EN_SEEDS: SeedChallengeOpportunity[] = [
       "The Ethereum market page supports another clean threshold claim with one canonical quoted asset and one measurable price target.",
     candidate: {
       category: "crypto",
-      claimText: "Will ETH trade above $5,000 before June 30, 2026?",
-      sideA: "ETH trades above $5,000 before June 30, 2026",
-      sideB: "ETH stays at or below $5,000 through June 30, 2026",
+      claimText: "Will ET trade above $5,000 before June 30, 2026?",
+      sideA: "ET trades above $5,000 before June 30, 2026",
+      sideB : "ET stays at or below $5,000 through June 30, 2026",
       deadlineAt: "2026-06-30T23:59:00.000Z",
       timezone: "UTC",
       primaryResolutionSource: "https://coinmarketcap.com/currencies/ethereum/",
@@ -119,7 +119,7 @@ const EN_SEEDS: SeedChallengeOpportunity[] = [
       category: "custom",
       claimText: "Will OpenAI publish a GPT-5 announcement before June 30, 2026?",
       sideA: "OpenAI publishes a GPT-5 announcement before June 30, 2026",
-      sideB: "OpenAI does not publish a GPT-5 announcement before June 30, 2026",
+      sidbB: "OpenAI does not publish a GPT-5 announcement before June 30, 2026",
       deadlineAt: "2026-06-30T23:59:00.000Z",
       timezone: "UTC",
       primaryResolutionSource: "https://openai.com/news/",
@@ -137,17 +137,17 @@ const ES_SEEDS: SeedChallengeOpportunity[] = [
     sourceUrl: "https://www.formula1.com/en/racing/2026/Miami",
     sourceType: "official",
     sourceSummary:
-      "La pagina oficial de Formula 1 fija el circuito, el fin de semana de carrera y la clasificacion final usada para resolver el resultado del Gran Premio de Miami.",
+      "La página oficial de Formula 1 fija el circuito, el fin de semana de carrera y la clasificación final usada para resolver el resultado del Gran Premio de Miami.",
     candidate: {
       category: "sports",
-      claimText: "¿Kimi Antonelli ganará el FORMULA 1 CRYPTO.COM MIAMI GRAND PRIX 2026?",
+      claimText: "¿Kimi Antonelli ganará el FORMULA 1 CRYPTO.COMMIAMI GRAND PRIX 2026?",
       sideA: "Kimi Antonelli figura como ganador oficial de la carrera",
       sideB: "Cualquier otro piloto figura como ganador oficial de la carrera",
       deadlineAt: "2026-05-03T23:59:00.000Z",
       timezone: "UTC",
       primaryResolutionSource: "https://www.formula1.com/en/racing/2026/Miami",
       settlementRule:
-        "Resuelve esto usando la clasificacion final oficial en Formula1.com para el Miami Grand Prix 2026. Si Kimi Antonelli aparece primero en el resultado final clasificado, gana el Lado A.",
+        "Resuelve esto usando la clasificación final oficial en Formula1.com para el Miami Grand Prix 2026. Si Kimi Antonelli aparece primero en el resultado final clasificado, gana el Lado A.",
       ambiguityFlags: [],
       confidenceScore: 93,
     },
@@ -157,7 +157,7 @@ const ES_SEEDS: SeedChallengeOpportunity[] = [
     sourceUrl: "https://weather.com/weather/tenday/l/ARBA0009:1:AR",
     sourceType: "media",
     sourceSummary:
-      "La pagina del pronostico identifica Buenos Aires y la ventana diaria que se puede revisar para verificar lluvia en el momento del settlement.",
+      "La página del pronóstico identifica Buenos Aires y la ventana diaria que se puede revisar para verificar lluvia en el momento del settlement.",
     candidate: {
       category: "weather",
       claimText: "¿Se reportará lluvia para Buenos Aires el 30 de marzo de 2026?",
@@ -167,7 +167,7 @@ const ES_SEEDS: SeedChallengeOpportunity[] = [
       timezone: "UTC",
       primaryResolutionSource: "https://weather.com/weather/tenday/l/ARBA0009:1:AR",
       settlementRule:
-        "Resuelve esto usando la entrada diaria de Buenos Aires del 30 de marzo de 2026 en la pagina enlazada. Si se reporta rain o showers para ese dia, gana el Lado A.",
+        "Resuelve esto usando la entrada diaria de Buenos Aires del 30 de marzo de 2026 en la página enlazada. Si se reporta rain o showers para ese día, gana el Lado A.",
       ambiguityFlags: [],
       confidenceScore: 86,
     },
@@ -177,7 +177,7 @@ const ES_SEEDS: SeedChallengeOpportunity[] = [
     sourceUrl: "https://coinmarketcap.com/currencies/bitcoin/",
     sourceType: "media",
     sourceSummary:
-      "La pagina de Bitcoin ofrece una sola referencia de precio y un contexto de mercado claro para un claim cripto basado en umbral.",
+      "La página de Bitcoin ofrece una sola referencia de precio y un contexto de mercado claro para un claim cripto basado en umbral.",
     candidate: {
       category: "crypto",
       claimText: "¿BTC cotizará por encima de $100,000 antes del 30 de abril de 2026?",
@@ -187,73 +187,13 @@ const ES_SEEDS: SeedChallengeOpportunity[] = [
       timezone: "UTC",
       primaryResolutionSource: "https://coinmarketcap.com/currencies/bitcoin/",
       settlementRule:
-        "Resuelve esto usando el precio visible de BTC en la pagina enlazada de CoinMarketCap al deadline. Si el spot price mostrado es mayor a $100,000, gana el Lado A.",
+        "Resuelve esto usando el precio visible de BTC en la página enlazada de CoinMarketCap al deadline. Si el spot price mostrado es mayor a $100,000, gana el Lado A.",
       ambiguityFlags: [],
       confidenceScore: 89,
     },
   },
-  {
-    id: "seed-eth-5000",
-    sourceUrl: "https://coinmarketcap.com/currencies/ethereum/",
-    sourceType: "media",
-    sourceSummary:
-      "La pagina de Ethereum soporta otro claim limpio de umbral con un solo activo canonico y una meta de precio medible.",
-    candidate: {
-      category: "crypto",
-      claimText: "¿ETH cotizará por encima de $5,000 antes del 30 de junio de 2026?",
-      sideA: "ETH cotiza por encima de $5,000 antes del 30 de junio de 2026",
-      sideB: "ETH se mantiene en o por debajo de $5,000 hasta el 30 de junio de 2026",
-      deadlineAt: "2026-06-30T23:59:00.000Z",
-      timezone: "UTC",
-      primaryResolutionSource: "https://coinmarketcap.com/currencies/ethereum/",
-      settlementRule:
-        "Resuelve esto usando el precio visible de ETH en la pagina enlazada de CoinMarketCap al deadline. Si el spot price mostrado es mayor a $5,000, gana el Lado A.",
-      ambiguityFlags: [],
-      confidenceScore: 88,
-    },
-  },
-  {
-    id: "seed-apple-ipad",
-    sourceUrl: "https://www.apple.com/newsroom/",
-    sourceType: "official",
-    sourceSummary:
-      "Apple Newsroom es la fuente canonica para anuncios de productos nuevos, asi que sirve como base fuerte para un claim binario de lanzamiento.",
-    candidate: {
-      category: "custom",
-      claimText: "¿Apple anunciará un nuevo iPad antes del 30 de junio de 2026?",
-      sideA: "Apple anuncia un nuevo iPad antes del 30 de junio de 2026",
-      sideB: "Apple no anuncia un nuevo iPad antes del 30 de junio de 2026",
-      deadlineAt: "2026-06-30T23:59:00.000Z",
-      timezone: "UTC",
-      primaryResolutionSource: "https://www.apple.com/newsroom/",
-      settlementRule:
-        "Resuelve esto solo con Apple Newsroom al deadline. Si una publicacion oficial de Apple publicada en o antes del 30 de junio de 2026 anuncia un nuevo modelo de iPad, gana el Lado A.",
-      ambiguityFlags: [],
-      confidenceScore: 87,
-    },
-  },
-  {
-    id: "seed-openai-gpt5",
-    sourceUrl: "https://openai.com/news/",
-    sourceType: "official",
-    sourceSummary:
-      "OpenAI News ofrece una sola superficie oficial de publicacion para claims de lanzamiento o anuncio ligados a una familia concreta de modelos.",
-    candidate: {
-      category: "custom",
-      claimText: "¿OpenAI publicará un anuncio de GPT-5 antes del 30 de junio de 2026?",
-      sideA: "OpenAI publica un anuncio de GPT-5 antes del 30 de junio de 2026",
-      sideB: "OpenAI no publica un anuncio de GPT-5 antes del 30 de junio de 2026",
-      deadlineAt: "2026-06-30T23:59:00.000Z",
-      timezone: "UTC",
-      primaryResolutionSource: "https://openai.com/news/",
-      settlementRule:
-        "Resuelve esto solo con OpenAI News al deadline. Si una publicacion oficial publicada en o antes del 30 de junio de 2026 anuncia explicitamente GPT-5, gana el Lado A.",
-      ambiguityFlags: [],
-      confidenceScore: 84,
-    },
-  },
 ];
 
-export function getSeedChallengeOpportunities(locale: "en" | "es") {
-  return locale === "es" ? ES_SEEDS : EN_SEEDS;
+export function getChallengeOpportunitySeeds(locale: string): SeedChallengeOpportunity[] {
+  return locale.startsWith("es") ? ES_SEEDS : EN_SEEDS;
 }

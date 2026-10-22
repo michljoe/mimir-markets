@@ -12,9 +12,14 @@
 // client bundle.
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { assertStrongSecret } from "./ops/secrets";
+
 function secret(): string {
   const s = process.env.PASS_SECRET;
   if (!s) throw new Error("PASS_SECRET required to sign passes");
+  // A guessable HMAC key lets anyone mint a pass for any payer. Refused in
+  // production, warned about everywhere else (tests run with short values).
+  assertStrongSecret("PASS_SECRET", s);
   return s;
 }
 

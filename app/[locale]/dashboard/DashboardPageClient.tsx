@@ -11,7 +11,7 @@ import {
   didUserWinVS,
   getVSUserWinAmount,
   type VSData,
-} from "@/lib/contract";
+} from "@/lib/contract/legacy";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 import { mergePendingVS } from "@/lib/pending-vs";
 import { applyExploreFilters } from "@/lib/exploreFilters";

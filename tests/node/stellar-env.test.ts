@@ -4,12 +4,14 @@ import test from "node:test";
 import {
   MAX_TOTAL_FEE_BPS,
   MIN_STAKE_ATOMIC,
+  STELLAR_NETWORKS,
   USDC_ASSET,
   USDC_DECIMALS,
   USDC_ISSUER,
   formatAtomicUsdc,
   parseEnvFile,
   parseUsdcAtomic,
+  resolveStellarNetwork,
   upsertEnvBody,
 } from "../../scripts/lib/stellar-env";
 
@@ -76,4 +78,38 @@ test("contract-mirrored constants match contracts-soroban/mimir-market/src/types
 test("USDC asset string is Circle's verified testnet issuer", () => {
   assert.equal(USDC_ISSUER, "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5");
   assert.equal(USDC_ASSET, `USDC:${USDC_ISSUER}`);
+});
+
+test("testnet remains the default network", () => {
+  const net = resolveStellarNetwork({});
+  assert.equal(net.name, "testnet");
+  assert.equal(net.networkPassphrase, "Test SDF Network ; September 2015");
+  assert.equal(net.horizonUrl, "https://horizon-testnet.stellar.org");
+  assert.equal(net.rpcUrl, "https://soroban-testnet.stellar.org");
+  assert.equal(net.friendbotUrl, "https://friendbot.stellar.org");
+});
+
+test("STELLAR_NETWORK=local resolves to the quickstart endpoints", () => {
+  const net = resolveStellarNetwork({ STELLAR_NETWORK: "local" });
+  assert.equal(net.name, "local");
+  assert.equal(net.networkPassphrase, "Standalone Network ; February 2017");
+  assert.equal(net.horizonUrl, "http://localhost:8000");
+  assert.equal(net.rpcUrl, "http://localhost:8000/soroban/rpc");
+  assert.equal(net.friendbotUrl, "http://localhost:8000/friendbot");
+});
+
+test("local network honours explicit URL overrides", () => {
+  const net = resolveStellarNetwork({
+    STELLAR_NETWORK: "local",
+    STELLAR_RPC_URL: "http://127.0.0.1:9000/soroban/rpc",
+    STELLAR_HORIZON_URL: "http://127.0.0.1:9000",
+    STELLAR_FRIENDBOT_URL: "http://127.0.0.1:9000/friendbot",
+  });
+  assert.equal(net.rpcUrl, "http://127.0.0.1:9000/soroban/rpc");
+  assert.equal(net.horizonUrl, "http://127.0.0.1:9000");
+  assert.equal(net.friendbotUrl, "http://127.0.0.1:9000/friendbot");
+});
+
+test("STELLAR_NETWORKS exposes both testnet and local profiles", () => {
+  assert.deepEqual(Object.keys(STELLAR_NETWORKS).sort(), ["local", "testnet"]);
 });

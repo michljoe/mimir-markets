@@ -2,12 +2,17 @@
 
 import { Activity } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useEffect, useMemo, useState } from "react";
 import {
   CREATE_TICKET_BODY_CLASS,
   CREATE_TICKET_META_GRID_CLASS,
   CREATE_TICKET_SHELL_CLASS,
   CREATE_TICKET_WATERMARK_CLASS,
 } from "@/lib/createFormResponsive";
+import { parsePrefillParams } from "@/lib/mirror-prefill";
+
+export type ChallengeSide = "yes" | "no";
+
 
 function truncate(s: string, max: number) {
   const t = s.trim();
@@ -45,6 +50,10 @@ export type CreateChallengeTicketProps = {
   stakeAmount: number;
   /** Dirección conectada para la línea AUTH_SIG; si no hay, se muestra un marcador. */
   walletAddress?: string | null;
+  /** Monto máximo permitido por mercado (suscripción). Usado para clamp. */
+  maxAmount?: number;
+  /** Query string de la URL actual (p. ej. `window.location.search`). */
+  searchParams?: string;
 };
 
 /**
@@ -59,9 +68,43 @@ export default function CreateChallengeTicket({
   settlementPreview,
   stakeAmount,
   walletAddress,
+  maxAmount,
+  searchParams,
 }: CreateChallengeTicketProps) {
   const t = useTranslations("create");
-  const stakeStr = Number.isFinite(stakeAmount) ? stakeAmount.toFixed(2) : "—";
+
+  // Resolve search params from prop or, in the browser, from the URL.
+  const [resolvedSearch, setResolvedSearch] = useState<string | undefined>(
+    searchParams,
+  );
+  useEffect(() => {
+    if (searchParams !== undefined) {
+      setResolvedSearch(searchParams);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      setResolvedSearch(window.location.search);
+    }
+  }, [searchParams]);
+
+  const prefill = useMemo(() => {
+    if (!resolvedSearch) return null;
+    try {
+      const params = new URLSearchParams(
+        resolvedSearch.startsWith("?")
+          ? resolvedSearch.slice(1)
+          : resolvedSearch,
+      );
+      return parsePrefillParams(params, maxAmount);
+    } catch {
+      return null;
+    }
+  }, [resolvedSearch, maxAmount]);
+
+  const effectiveStake = prefill ? prefill.amount : stakeAmount;
+  const stakeStr = Number.isFinite(effectiveStake)
+    ? effectiveStake.toFixed(2)
+    : "—";
   const body = truncate(settlementPreview.trim(), 240);
   const authDisplay = formatWalletForTicket(walletAddress);
   const showQuoted = body.length > 0;
@@ -130,6 +173,16 @@ export default function CreateChallengeTicket({
                 {visibilityLabel}
               </span>
             </div>
+            {prefill ? (
+              <div>
+                <div className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
+                  {t("ticketSideLabel")}
+                </div>
+                <span className="text-sm font-semibold uppercase text-pv-emerald">
+                  {prefill.side}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2 border-t border-pv-ink/[0.08] pt-6">

@@ -46,7 +46,9 @@ function getCacheState(): VSCacheState {
 function getSnapshotPath() {
   const baseDir =
     process.env.PROVEN_CACHE_DIR ||
-    (process.env.VERCEL ? path.join(tmpdir(), "proven-cache") : path.join(process.cwd(), ".cache"));
+    (process.env.VERCEL
+      ? path.join(tmpdir(), "proven-cache")
+      : path.join(process.cwd(), ".cache"));
 
   // The contract id is part of the filename so a redeploy cannot read a stale
   // snapshot. Kept verbatim so the name matches the id everything else uses; a
@@ -101,11 +103,11 @@ function shouldRebuildFromScratch(snapshot: VSSnapshot | null, count: number) {
 }
 
 /**
- * Exact strkey comparison.
+ * Exact strakey comparison.
  *
  * The `toLowerCase()` pairing this used to do folded both sides identically, so it
  * did still match — but only as long as both values came from the same corrupted
- * source. Comparing a freshly-read `G…` against a lowercased cache entry (or the
+ * source. Comparing a freshly-read `G`  against a lowercased cache entry (or the
  * reverse) silently returned nothing, which is precisely what happened once the
  * index stopped folding on write.
  */
@@ -122,7 +124,7 @@ function matchesUser(vs: VSData, address: string) {
   );
 }
 
-async function readSnapshotFromDisk(): Promise<VSSnapshot | null> {
+async function readFromDisk(): Promise<VSSnapshot | null> {
   try {
     const raw = await readFile(getSnapshotPath(), "utf8");
     return JSON.parse(raw) as VSSnapshot;
@@ -175,7 +177,7 @@ async function rebuildSnapshot(totalCount: number) {
 
 async function refreshSnapshot(force = false): Promise<VSSnapshot> {
   const state = getCacheState();
-  const cached = state.snapshot ?? (await readSnapshotFromDisk());
+  const cached = state.snapshot ?? (await readFromDisk());
 
   if (!force && cached && snapshotIsFresh(cached)) {
     state.snapshot = cached;
@@ -231,7 +233,7 @@ async function refreshSnapshot(force = false): Promise<VSSnapshot> {
 
 async function ensureSnapshot(force = false) {
   const state = getCacheState();
-  const cached = state.snapshot ?? (await readSnapshotFromDisk());
+  const cached = state.snapshot ?? (await readFromDisk());
   if (!force && cached && snapshotIsFresh(cached)) {
     state.snapshot = cached;
     return cached;
@@ -251,9 +253,13 @@ export async function refreshVSIndex() {
   return ensureSnapshot(true);
 }
 
-export async function getAllVSFast(): Promise<VSData[]> {
+export async function getAllVSFastSnapshot(): Promise<{ items: VSData[]; syncedAt: number }> {
   const snapshot = await ensureSnapshot();
-  return snapshot.items;
+  return { items: snapshot.items, syncedAt: snapshot.syncedAt };
+}
+
+export async function getAllVSFast(): Promise<VSData[]> {
+  return (await getAllVSFastSnapshot()).items;
 }
 
 export async function getVSByIdFast(vsId: number): Promise<VSData | null> {
@@ -278,3 +284,5 @@ export async function getUserVSFast(address: string): Promise<VSData[]> {
   const snapshot = await ensureSnapshot();
   return snapshot.items.filter((vs) => matchesUser(vs, address));
 }
+
+export { filterPublicClaims, SITEMAP_CLAIM_LIMIT } from "@/lib/server/sitemap-claims";

@@ -45,6 +45,7 @@ import { readAgentBalances } from "../../lib/agent-wallets";
 import { STELLAR_NETWORK, requireMarketContractId } from "../../lib/stellar";
 import { unitsToUsdc } from "../../lib/usdc";
 import { reportingPoll, runWorkerLoop } from "../../lib/ops/heartbeat";
+import { resolvePollJitterMs } from "../../lib/ops/poll-jitter";
 import {
   BackoffError,
   DependencyFailureError,
@@ -81,6 +82,8 @@ import type {
 } from "./shared/types";
 
 const POLL_INTERVAL_MS = Number(process.env.COUNCIL_POLL_INTERVAL_MS ?? 180_000);
+// ± around each cycle; unset = 10% of the interval, 0 = fixed scheduling.
+const POLL_JITTER_MS = resolvePollJitterMs(POLL_INTERVAL_MS, process.env.COUNCIL_POLL_JITTER_MS);
 /**
  * Per-cycle work cap to stay under Gemini free-tier rate limits.
  * Claims are sorted by deadline-proximity so the council focuses on
@@ -316,6 +319,7 @@ async function main(): Promise<void> {
   console.log(`  Peer reads     : ${PEER_READS_ENABLED ? `${PEER_READS_PER_PERSONA}/persona via ${PEER_READS_BASE_URL}` : "off"}`);
   console.log(`  Peer read gap  : ${PEER_READ_DELAY_MS / 1000}s`);
   console.log(`  Poll every     : ${POLL_INTERVAL_MS / 1000}s`);
+  console.log(`  Poll jitter    : ±${(POLL_JITTER_MS / 1000).toFixed(1)}s`);
   console.log("───────────────────────────────────────────────");
 
   for (const p of ALL_ACTIVE) {
@@ -341,7 +345,12 @@ async function main(): Promise<void> {
   const safePoll = () =>
     reportingPoll("council", "council", POLL_INTERVAL_MS / 1000, poll, { pause: "council_worker" });
 
-  await runWorkerLoop({ worker: "council", intervalMs: POLL_INTERVAL_MS, cycle: safePoll });
+  await runWorkerLoop({
+    worker: "council",
+    intervalMs: POLL_INTERVAL_MS,
+    jitterMs: POLL_JITTER_MS,
+    cycle: safePoll,
+  });
 }
 
 main().catch((err) => {

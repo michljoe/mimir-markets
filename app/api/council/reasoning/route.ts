@@ -14,7 +14,7 @@ import type { HTTPRequestContext } from "@x402/core/http";
 import { PRICES } from "@/lib/x402/config";
 import { verifyPass } from "@/lib/server/paid-pass";
 import { getPersonaBySlug } from "@/agents/council/personas";
-import { getCouncilAddress } from "@/lib/agent-wallets";
+import { councilPayoutRefusal, resolveCouncilPayout } from "@/lib/ops/council-payouts";
 import { readClaimRaw } from "@/lib/contract";
 import { callLLM } from "@/lib/llm";
 import { getCachedReasoning, setCachedReasoning, TTL_MS } from "@/lib/server/reasoning-cache";
@@ -27,9 +27,24 @@ const PASS_PLAN = "council";
 /** Recipient of this read's payment — the persona itself, not the platform. */
 function personaAddress(ctx: HTTPRequestContext): string {
   const slug = queryParam(ctx, "persona").toLowerCase().trim();
-  const payTo = getCouncilAddress(slug);
-  if (!payTo) throw new Error(`persona '${slug}' has no wallet configured`);
-  return payTo;
+  const payout = resolveCouncilPayout(slug);
+  if (!payout.ok) throw new Error(payout.reason);
+  return payout.address;
+}
+
+/**
+ * Refuse to quote a 402 for a persona whose payout address failed validation.
+ * An unknown persona stays the handler's 400 — there is no address to validate.
+ */
+function personaQuotable(req: NextRequest): NextResponse | null {
+  const slug = (req.nextUrl.searchParams.get("persona") ?? "").toLowerCase().trim();
+  if (!getPersonaBySlug(slug)) return null;
+  const refusal = councilPayoutRefusal(slug);
+  if (!refusal) return null;
+  return NextResponse.json(refusal.body, {
+    status: refusal.status,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 /** A valid council pass unlocks reads for its window — no per-read payment. */
@@ -50,10 +65,18 @@ async function handler(req: NextRequest): Promise<NextResponse> {
   if (!Number.isInteger(claimId) || claimId < 1) {
     return NextResponse.json({ error: "claimId must be a positive integer" }, { status: 400 });
   }
-  const payTo = getCouncilAddress(slug);
-  if (!payTo) {
-    return NextResponse.json({ error: `persona '${slug}' has no wallet configured` }, { status: 503 });
+  const payout = resolveCouncilPayout(slug);
+  if (!payout.ok) {
+    return NextResponse.json(
+      {
+        error: payout.reason,
+        code: "payment_recipient_unavailable",
+        variable: payout.variable,
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
+  const payTo = payout.address;
 
   // A warm (claim, persona) pair skips both the contract read and the LLM call;
   // the read stays billed either way.
@@ -133,5 +156,6 @@ export const GET = tracedRoute(
   paidRoute("councilReasoning", handler, {
     payTo: personaAddress,
     skipPayment: hasCouncilPass,
+    beforeQuote: personaQuotable,
   }),
 );

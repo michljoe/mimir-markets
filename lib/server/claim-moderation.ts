@@ -231,6 +231,17 @@ async function callGemini(prompt: string) {
   );
 }
 
+/**
+ * Evaluates a user-submitted claim against safety and content policies.
+ *
+ * Runs local keyword rules first to instantly block clear violations
+ * (such as self-harm, extreme violence, or doxxing) without model latency,
+ * then delegates nuanced evaluations to the LLM policy evaluator.
+ *
+ * @param args.input - Submitted claim parameters including question, positions, settlement rules, and resolution source
+ * @param args.locale - Request locale ('en' | 'es') for error messaging and localized policy context
+ * @returns Resulting decision ('allow' | 'review' | 'block'), confidence score, and matched violation codes
+ */
 export async function moderateClaim(args: {
   input: ClaimModerationInput;
   locale?: string;

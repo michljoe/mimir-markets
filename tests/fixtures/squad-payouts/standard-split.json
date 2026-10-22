@@ -1,0 +1,13 @@
+{
+  "description": "Two equal winners split the losing pool evenly with no fee.",
+  "winners": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "depositAtomic": "1000" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "1000" }
+  ],
+  "losingPoolAtomic": "1000",
+  "feeBps": 0,
+  "expected": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "1500" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "netAtomic": "1500" }
+  ]
+}

@@ -525,3 +525,139 @@ test("budgetRemaining reports what is left and when the window resets", async ()
   assert.ok(remaining.bytes < 1_000);
   assert.ok(remaining.windowResetsAt > Date.now());
 });
+
+// ── Budget windows ────────────────────────────────────────────────────────────
+
+test("a budget window resets once the period has elapsed", async () => {
+  fresh();
+  const budget = { maxRequests: 1, maxBytes: 1_000_000, windowMs: 60_000 };
+  const t0 = 1_000_000;
+  const args = (n: number, now: number) => ({
+    url: `https://example.com/${n}`,
+    agentId: "windowed",
+    policy: PUBLIC_POLICY,
+    budget,
+    now,
+    resolve: publicDns,
+    fetchImpl: async () => htmlResponse("body"),
+  });
+  assert.equal((await gatewayFetch(args(1, t0))).ok, true);
+  const exhausted = await gatewayFetch(args(2, t0 + 1));
+  assert.equal(exhausted.ok, false);
+  assert.equal(exhausted.ok === false && exhausted.kind, "budget");
+  // Just before the boundary the window is still closed.
+  const justBefore = await gatewayFetch(args(3, t0 + 60_000 - 1));
+  assert.equal(justBefore.ok, false);
+  assert.equal(justBefore.ok === false && justBefore.kind, "budget");
+  // At the boundary the window has reset.
+  const afterReset = await gatewayFetch(args(4, t0 + 60_000));
+  assert.equal(afterReset.ok, true);
+});
+
+test("budgetRemaining reports a reset time that reflects the injected clock", () => {
+  fresh();
+  const budget = { maxRequests: 3, maxBytes: 1_000, windowMs: 30_000 };
+  const now = 5_000_000;
+  const remaining = budgetRemaining("clocked", budget, now);
+  assert.equal(remaining.requests, 3);
+  assert.equal(remaining.bytes, 1_000);
+  assert.equal(remaining.windowResetsAt, now + 30_000);
+});
+
+test("budget windows are isolated between agents", async () => {
+  fresh();
+  const budget = { maxRequests: 1, maxBytes: 1_000_000, windowMs: 60_000 };
+  const now = 2_000_000;
+  const make = (agentId: string, n: number) => ({
+    url: `https://example.com/${agentId}/${n}`,
+    agentId,
+    policy: PUBLIC_POLICY,
+    budget,
+    now,
+    resolve: publicDns,
+    fetchImpl: async () => htmlResponse("body"),
+  });
+  assert.equal((await gatewayFetch(make("alpha", 1))).ok, true);
+  assert.equal((await gatewayFetch(make("alpha", 2))).ok, false);
+  assert.equal((await gatewayFetch(make("beta", 1))).ok, true);
+  assert.equal((await gatewayFetch(make("beta", 2))).ok, false);
+  // Resetting alpha's window must not reset beta's.
+  assert.equal((await gatewayFetch(make("alpha", 3))).ok, false);
+  const alphaReset = await gatewayFetch({
+    ...make("alpha", 4),
+    now: now + 60_000,
+  });
+  assert.equal(alphaReset.ok, true);
+  const betaStillClosed = await gatewayFetch(make("beta", 3));
+  assert.equal(betaStillClosed.ok, false);
+  assert.equal(betaStillClosed.ok === false && betaStillClosed.kind, "budget");
+});
+
+test("a cache hit does not advance the budget window", async () => {
+  fresh();
+  const budget = { maxRequests: 2, maxBytes: 1_000_000, windowMs: 60_000 };
+  const t0 = 3_000_000;
+  const args = {
+    url: "https://example.com/cached",
+    agentId: "cachebudget",
+    policy: PUBLIC_POLICY,
+    budget,
+    now: t0,
+    resolve: publicDns,
+    fetchImpl: async () => htmlResponse("body"),
+  };
+  await gatewayFetch(args);
+  const afterMiss = budgetRemaining("cachebudget", budget, t0);
+  assert.equal(afterMiss.requests, 1);
+  const hit = await gatewayFetch({ ...args, now: t0 + 1 });
+  assert.equal(hit.ok, true);
+  assert.equal(hit.ok && hit.fromCache, true);
+  const afterHit = budgetRemaining("cachebudget", budget, t0 + 1);
+  assert.equal(afterHit.requests, 1, "a cache hit must not be charged");
+  assert.equal(afterHit.bytes, afterMiss.bytes);
+  assert.equal(afterHit.windowResetsAt, afterMiss.windowResetsAt);
+});
+
+test("a cache miss after the window resets is charged against the new window", async () => {
+  fresh();
+  const budget = { maxRequests: 1, maxBytes: 1_000_000, windowMs: 60_000 };
+  const t0 = 4_000_000;
+  const args = (url: string, now: number) => ({
+    url,
+    agentId: "missreset",
+    policy: PUBLIC_POLICY,
+    budget,
+    now,
+    resolve: publicDns,
+    fetchImpl: async () => htmlResponse("body"),
+  });
+  assert.equal((await gatewayFetch(args("https://example.com/a", t0))).ok, true);
+  assert.equal((await gatewayFetch(args("https://example.com/b", t0 + 1))).ok, false);
+  const afterReset = await gatewayFetch(args("https://example.com/c", t0 + 60_000));
+  assert.equal(afterReset.ok, true);
+  assert.equal(afterReset.ok && afterReset.fromCache, false);
+});
+
+test("resetBudgets clears every agent's window", async () => {
+  fresh();
+  const budget = { maxRequests: 1, maxBytes: 1_000_000, windowMs: 60_000 };
+  const now = 6_000_000;
+  const make = (agentId: string, n: number) => ({
+    url: `https://example.com/${agentId}/${n}`,
+    agentId,
+    policy: PUBLIC_POLICY,
+    budget,
+    now,
+    resolve: publicDns,
+    fetchImpl: async () => htmlResponse("body"),
+  });
+  assert.equal((await gatewayFetch(make("one", 1))).ok, true);
+  assert.equal((await gatewayFetch(make("two", 1))).ok, true);
+  assert.equal((await gatewayFetch(make("one", 2))).ok, false);
+  assert.equal((await gatewayFetch(make("two", 2))).ok, false);
+  resetBudgets();
+  assert.equal((await gatewayFetch(make("one", 3))).ok, true);
+  assert.equal((await gatewayFetch(make("two", 3))).ok, true);
+  const remaining = budgetRemaining("one", budget, now);
+  assert.equal(remaining.requests, 0);
+});

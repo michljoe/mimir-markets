@@ -1,0 +1,15 @@
+{
+  "description": "Three weighted winners with a 1% profit fee.",
+  "winners": [
+    { "participant": "GaLANCER00000000000000000000000000000000000000000000000000", "depositAtomic": "1000" },
+    { "participant": "GBLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "2000" },
+    { "participant": "GCLANCER000000000000000000000000000000000000000000000000000", "depositAtomic": "3000" }
+  ],
+  "losingPoolAtomic": "600",
+  "feeBps": 100,
+  "expected": [
+    { "participant": "GaLANCER000000000000000000000000000000000000000000000000000", "netAtomic": "1099" },
+    { "participant": "GBLANCER00000000000000000000000000000000000000000000000000", "netAtomic": "2198" },
+    { "participant": "GCLANCER000000000000000000000000000000000000000000000000000", "netAtomic": "3297" }
+  ]
+}

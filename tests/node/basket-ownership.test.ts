@@ -24,6 +24,7 @@ import test from "node:test";
 import { basketMessage, CURATED_BASKET_IDS, TRANSFER_EXPIRY_MS, transferMessage } from "../../lib/baskets";
 import { isStellarAccount } from "../../lib/stellar-message";
 import { ANALYTICS_EVENTS, isAnalyticsEvent } from "../../lib/analytics/events";
+import { BASKET_CREATION_EXPIRY_MS } from "../../lib/baskets";
 
 // ── Test keypairs — real Stellar strkeys with valid checksums ─────────────────
 //
@@ -49,6 +50,18 @@ function validTransferArgs(overrides: Partial<Parameters<typeof transferMessage>
     newOwner: OWNER_B,
     nonce: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     expiresAt: Date.now() + TRANSFER_EXPIRY_MS,
+    ...overrides,
+  };
+}
+
+/** Returns a fresh set of valid basketMessage args (nonce and expiresAt included). */
+function validCreationArgs(overrides: Partial<Parameters<typeof basketMessage>[0]> = {}): Parameters<typeof basketMessage>[0] {
+  return {
+    name: "Test Basket",
+    creator: OWNER_A,
+    members: [{ agentId: "optimist", weightBps: 10_000 }],
+    nonce: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    expiresAt: Date.now() + BASKET_CREATION_EXPIRY_MS,
     ...overrides,
   };
 }
@@ -101,10 +114,7 @@ test("transferMessage cannot be confused with basketMessage (different prefix)",
   // A signature over basketMessage must not verify against transferMessage and
   // vice-versa. Testing the text difference is the unit-level check; the
   // cryptographic guarantee follows from Ed25519.
-  const creation = basketMessage({
-    name: "Test", creator: OWNER_A,
-    members: [{ agentId: "optimist", weightBps: 10_000 }],
-  });
+  const creation = basketMessage(validCreationArgs());
   const transfer = transferMessage(validTransferArgs());
   assert.notEqual(creation.split("\n")[0], transfer.split("\n")[0]);
   assert.match(creation, /^Mimir basket\n/);

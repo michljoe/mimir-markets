@@ -12,6 +12,10 @@ import { defineConfig } from "@playwright/test";
  * The suite uses the system Chrome/Chromium (Playwright channel "chrome") and
  * downloads no browser. To point it at a specific binary, set SMOKE_CHROME_PATH;
  * otherwise a stock Chrome or Chromium on PATH is used.
+ *
+ * Visual regression snapshots live in `tests/browser/__snapshots__`. Update them
+ * with `npm run smoke:browser -- --update-snapshots` and commit the resulting
+ * PNG files. See tests/browser/README (or the spec header) for details.
  */
 const baseURL = process.env.SMOKE_BASE_URL ?? "http://127.0.0.1:3111";
 const workers = Number(process.env.SMOKE_WORKERS ?? 2);
@@ -20,14 +24,21 @@ const launchOptions = process.env.SMOKE_CHROME_PATH
   ? { executablePath: process.env.SMOKE_CHROME_PATH }
   : {};
 
-export default defineConfig({
+export default defineConfig( {
   testDir: "./tests/browser",
   testMatch: "**/*.spec.ts",
   fullyParallel: false,
   workers,
   retries: 0,
   timeout: 60_000,
-  expect: { timeout: 12_000 },
+  // Snapshots are generated on the first run and compared on subsequent runs.
+  // Keep the threshold strict enough to catch drift but tolerant of anti-aliasing.
+  expect: {
+    timeout: 12_000,
+    toHaveScreenshot: { maxDiffPixelRatio: 0.01, threshold: 0.2 },
+  },
+  // Snapshots are stored next to the spec so they are easy to find and review.
+  snapshotPathTemplate: "{testDir}/{testFileDir}/__snapshots__/{testFileName}/{arg}{ext}",
   reporter: [
     ["list"],
     ["html", { open: "never", outputFolder: "playwright-report" }],
@@ -37,9 +48,14 @@ export default defineConfig({
     channel,
     launchOptions,
     headless: true,
+    // Fixed viewport and device scale factor so screenshots are stable across CI runs.
     viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
     colorScheme: "dark",
     locale: "en-US",
+    timezoneId: "UTC",
+    // Disable animations and caret blinking for deterministic captures.
+    reducedMotion: "reduce",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
